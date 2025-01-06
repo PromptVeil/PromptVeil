@@ -2,21 +2,22 @@ use pyo3::prelude::*;
 use pyo3::exceptions::PyIOError;
 use std::convert::TryInto;
 use std::env;
-use std::path::Path;
 
 mod compression;
 mod security;
 mod julia;
 
+use crate::compression::CompressionConfig;
+
 #[no_mangle]
 pub extern "C" fn __rust_julia_init() {
-    // Esta função será chamada quando a DLL for carregada
+    // This function will be called when the DLL is loaded
     let exe_dir = env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
         .expect("Failed to get executable directory");
     
-    // Adiciona o diretório da DLL ao PATH temporariamente
+    // Temporarily add DLL directory to PATH
     let old_path = env::var_os("PATH").unwrap_or_default();
     let mut new_path = exe_dir.as_os_str().to_owned();
     new_path.push(";");
@@ -27,12 +28,17 @@ pub extern "C" fn __rust_julia_init() {
 
 #[pyfunction]
 fn compress_tokens(data: &[u8]) -> PyResult<Vec<u8>> {
-    // Convert bytes to u32 tokens (assuming 4 bytes per token)
-    let tokens: Vec<u32> = data.chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
-        .collect();
-
-    compression::compress_tokens(&tokens)
+    let tokens = bytes_to_tokens(data)?;
+    
+    // Default configuration with GPU enabled
+    let config = Some(CompressionConfig {
+        gpu_enabled: true,      // Try to use GPU by default
+        simd_enabled: true,     // Use SIMD when available
+        pattern_learning: true  // Enable pattern learning
+    });
+    
+    compression::compress_tokens(&tokens, config)
+        .map(|(compressed, _stats)| compressed)
         .map_err(|e| PyErr::new::<PyIOError, _>(e.to_string()))
 }
 
@@ -49,22 +55,18 @@ fn decompress_tokens(data: &[u8]) -> PyResult<Vec<u8>> {
 }
 
 #[pyfunction]
-fn compress_batch(data: &[u8], chunk_size: usize) -> PyResult<Vec<u8>> {
-    // Convert bytes to u32 tokens (assuming 4 bytes per token)
-    let tokens: Vec<u32> = data.chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
-        .collect();
-
-    let rows = data.len() / chunk_size;
-    let cols = chunk_size / 4;
-
-    compression::compress_batch(&tokens, rows, cols)
-        .map(|compressed| {
-            // Convert u32 tokens back to bytes
-            compressed.iter()
-                .flat_map(|&token| token.to_le_bytes().to_vec())
-                .collect()
-        })
+fn compress_batch(data: &[u8], rows: usize, cols: usize) -> PyResult<Vec<u8>> {
+    let tokens = bytes_to_tokens(data)?;
+    
+    // Default configuration with GPU enabled
+    let config = Some(CompressionConfig {
+        gpu_enabled: true,      // Try to use GPU by default
+        simd_enabled: true,     // Use SIMD when available
+        pattern_learning: true  // Enable pattern learning
+    });
+    
+    compression::compress_batch(&tokens, rows, cols, config)
+        .map(|(compressed, _stats)| compressed)
         .map_err(|e| PyErr::new::<PyIOError, _>(e.to_string()))
 }
 
@@ -137,11 +139,21 @@ mod tests {
     #[test]
     fn test_batch_compression() {
         let data = b"Test data for batch compression".repeat(100);
-        let chunk_size = 16;
-        let rows = data.len() / chunk_size;
-        let cols = chunk_size / 4;
-        let compressed = compress_batch(&data, chunk_size).unwrap();
+        let rows = 100;
+        let cols = 8; // 32 bytes per row (8 tokens of 4 bytes)
+        let compressed = compress_batch(&data, rows, cols).unwrap();
         let decompressed = decompress_batch(&compressed, rows, cols).unwrap();
         assert_eq!(data.to_vec(), decompressed);
     }
+}
+
+// Helper function to convert bytes to tokens
+fn bytes_to_tokens(data: &[u8]) -> PyResult<Vec<u32>> {
+    if data.len() % 4 != 0 {
+        return Err(PyErr::new::<PyIOError, _>("Data length must be multiple of 4"));
+    }
+    
+    Ok(data.chunks_exact(4)
+        .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+        .collect())
 } 

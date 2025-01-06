@@ -1,4 +1,3 @@
-use std::io;
 use std::error::Error;
 use std::fmt;
 use crate::julia::JuliaInterface;
@@ -7,8 +6,6 @@ use crate::julia::JuliaInterface;
 pub enum CompressionError {
     JuliaError(String),
     InvalidInput(String),
-    GPUError(String),
-    MemoryError(String),
 }
 
 impl fmt::Display for CompressionError {
@@ -16,8 +13,6 @@ impl fmt::Display for CompressionError {
         match self {
             CompressionError::JuliaError(msg) => write!(f, "Julia error: {}", msg),
             CompressionError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
-            CompressionError::GPUError(msg) => write!(f, "GPU error: {}", msg),
-            CompressionError::MemoryError(msg) => write!(f, "Memory error: {}", msg),
         }
     }
 }
@@ -27,8 +22,6 @@ impl Error for CompressionError {}
 #[derive(Debug, Clone)]
 pub struct CompressionConfig {
     pub gpu_enabled: bool,
-    pub batch_size: usize,
-    pub min_gpu_tokens: usize,
     pub simd_enabled: bool,
     pub pattern_learning: bool,
 }
@@ -37,8 +30,6 @@ impl Default for CompressionConfig {
     fn default() -> Self {
         Self {
             gpu_enabled: true,
-            batch_size: 1000,
-            min_gpu_tokens: 1000,
             simd_enabled: true,
             pattern_learning: true,
         }
@@ -46,24 +37,20 @@ impl Default for CompressionConfig {
 }
 
 pub struct CompressionStats {
-    pub original_size: usize,
-    pub compressed_size: usize,
     pub compression_ratio: f64,
-    pub processing_time_ms: u64,
-    pub used_gpu: bool,
+    pub time_ms: f64,
+    pub use_gpu: bool
 }
 
 pub fn compress_tokens(tokens: &[u32], config: Option<CompressionConfig>) -> Result<(Vec<u8>, CompressionStats), CompressionError> {
     let config = config.unwrap_or_default();
+    let use_gpu = config.gpu_enabled;
     let start_time = std::time::Instant::now();
     
     // Validate input
     if tokens.is_empty() {
         return Err(CompressionError::InvalidInput("Empty token sequence".into()));
     }
-    
-    // Determine if we should use GPU
-    let use_gpu = config.gpu_enabled && tokens.len() >= config.min_gpu_tokens;
     
     // Optimize tokens via Julia
     let optimized = match JuliaInterface::optimize_tokens_with_config(
@@ -92,11 +79,9 @@ pub fn compress_tokens(tokens: &[u32], config: Option<CompressionConfig>) -> Res
     
     // Calculate statistics
     let stats = CompressionStats {
-        original_size: tokens.len() * 4,
-        compressed_size: compressed.len(),
         compression_ratio: compressed.len() as f64 / (tokens.len() * 4) as f64,
-        processing_time_ms: start_time.elapsed().as_millis() as u64,
-        used_gpu,
+        time_ms: start_time.elapsed().as_millis() as f64,
+        use_gpu,
     };
     
     Ok((compressed, stats))
@@ -131,8 +116,9 @@ pub fn compress_batch(
     rows: usize,
     cols: usize,
     config: Option<CompressionConfig>
-) -> Result<(Vec<u32>, CompressionStats), CompressionError> {
+) -> Result<(Vec<u8>, CompressionStats), CompressionError> {
     let config = config.unwrap_or_default();
+    let use_gpu = config.gpu_enabled;
     let start_time = std::time::Instant::now();
     
     // Validate input
@@ -141,9 +127,6 @@ pub fn compress_batch(
             format!("Token length {} does not match dimensions {}x{}", tokens.len(), rows, cols)
         ));
     }
-    
-    // Determine if we should use GPU
-    let use_gpu = config.gpu_enabled && tokens.len() >= config.min_gpu_tokens;
     
     // Compress batch via Julia
     let compressed = match JuliaInterface::compress_batch_with_config(
@@ -158,16 +141,19 @@ pub fn compress_batch(
         Err(e) => return Err(CompressionError::JuliaError(e.to_string())),
     };
     
+    // Convert to bytes
+    let mut bytes = Vec::with_capacity(compressed.len() * 4);
+    bytes.extend(compressed.iter()
+        .flat_map(|&token| token.to_le_bytes().to_vec()));
+    
     // Calculate statistics
     let stats = CompressionStats {
-        original_size: tokens.len() * 4,
-        compressed_size: compressed.len() * 4,
-        compression_ratio: compressed.len() as f64 / tokens.len() as f64,
-        processing_time_ms: start_time.elapsed().as_millis() as u64,
-        used_gpu,
+        compression_ratio: bytes.len() as f64 / (tokens.len() * 4) as f64,
+        time_ms: start_time.elapsed().as_millis() as f64,
+        use_gpu,
     };
     
-    Ok((compressed, stats))
+    Ok((bytes, stats))
 }
 
 pub fn decompress_batch(
@@ -199,7 +185,7 @@ mod tests {
         
         assert_eq!(tokens, decompressed);
         assert!(stats.compression_ratio > 0.0);
-        assert!(stats.processing_time_ms >= 0);
+        assert!(stats.time_ms >= 0.0);
     }
 
     #[test]
@@ -213,7 +199,7 @@ mod tests {
         
         assert_eq!(tokens, decompressed);
         assert!(stats.compression_ratio > 0.0);
-        assert!(stats.processing_time_ms >= 0);
+        assert!(stats.time_ms >= 0.0);
     }
     
     #[test]
@@ -221,14 +207,12 @@ mod tests {
         let tokens = vec![1, 2, 3, 4, 5];
         let config = CompressionConfig {
             gpu_enabled: false,
-            batch_size: 500,
-            min_gpu_tokens: 2000,
             simd_enabled: true,
             pattern_learning: true,
         };
         
         let (compressed, stats) = compress_tokens(&tokens, Some(config)).unwrap();
-        assert!(!stats.used_gpu);
+        assert!(!stats.use_gpu);
         
         let decompressed = decompress_tokens(&compressed).unwrap();
         assert_eq!(tokens, decompressed);

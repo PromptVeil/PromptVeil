@@ -1,124 +1,101 @@
-use std::io::{self, Read, Write, Seek, SeekFrom};
-use bincode::{serialize_into, deserialize_from};
-use crate::{PVeilFile, PVeilHeader, Result, Error, BlockIndex};
+use std::io::{Read, Write, Seek, SeekFrom};
 
 pub struct FileWriter<W: Write + Seek> {
     writer: W,
-    current_offset: u64,
+    current_pos: u64,
 }
 
 impl<W: Write + Seek> FileWriter<W> {
     pub fn new(writer: W) -> Self {
         Self {
             writer,
-            current_offset: 0,
+            current_pos: 0,
         }
     }
 
-    pub fn write_file(&mut self, file: &PVeilFile) -> Result<()> {
-        // Write header
-        let header_size = self.write_header(&file.header)?;
-        self.current_offset += header_size;
-
-        // Write schema
-        let schema_offset = self.current_offset;
-        serialize_into(&mut self.writer, &file.schema)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
-        self.current_offset += bincode::serialized_size(&file.schema)
-            .map_err(|e| Error::Serialization(e.to_string()))? as u64;
-
-        // Update header with schema offset
-        self.writer.seek(SeekFrom::Start(0))?;
-        let mut header = file.header.clone();
-        header.schema_offset = schema_offset;
-        serialize_into(&mut self.writer, &header)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
-
-        // Write partitions and update block index
-        self.writer.seek(SeekFrom::Start(self.current_offset))?;
-        let mut block_index = BlockIndex::new();
-        
-        for partition in &file.partitions {
-            let partition_start = self.writer.seek(SeekFrom::Current(0))?;
-            serialize_into(&mut self.writer, partition)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
-            
-            // Update block index with correct offsets
-            self.current_offset = partition.update_block_index(&mut block_index, partition_start);
-            self.writer.seek(SeekFrom::Start(self.current_offset))?;
-        }
-
-        // Write block index at the end
-        serialize_into(&mut self.writer, &block_index)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
-
-        Ok(())
+    pub fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let bytes_written = self.writer.write(data)?;
+        self.current_pos += bytes_written as u64;
+        Ok(bytes_written)
     }
 
-    fn write_header(&mut self, header: &PVeilHeader) -> Result<u64> {
-        let start = self.writer.seek(SeekFrom::Current(0))?;
-        serialize_into(&mut self.writer, header)
-            .map_err(|e| Error::Serialization(e.to_string()))?;
-        let end = self.writer.seek(SeekFrom::Current(0))?;
-        Ok(end - start)
+    pub fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        self.current_pos = self.writer.seek(pos)?;
+        Ok(self.current_pos)
+    }
+
+    pub fn position(&self) -> u64 {
+        self.current_pos
     }
 }
 
 pub struct FileReader<R: Read + Seek> {
     reader: R,
+    current_pos: u64,
 }
 
 impl<R: Read + Seek> FileReader<R> {
     pub fn new(reader: R) -> Self {
-        Self { reader }
-    }
-
-    pub fn read_file(&mut self) -> Result<PVeilFile> {
-        // Read and validate header
-        let header: PVeilHeader = deserialize_from(&mut self.reader)
-            .map_err(|e| Error::Deserialization(e.to_string()))?;
-
-        if &header.magic != b"PVEIL" {
-            return Err(Error::InvalidMagic);
-        }
-
-        // Read schema
-        self.reader.seek(SeekFrom::Start(header.schema_offset))?;
-        let schema = deserialize_from(&mut self.reader)
-            .map_err(|e| Error::Deserialization(e.to_string()))?;
-
-        // Read partitions
-        let mut partitions = Vec::with_capacity(header.partition_count as usize);
-        for _ in 0..header.partition_count {
-            let partition = deserialize_from(&mut self.reader)
-                .map_err(|e| Error::Deserialization(e.to_string()))?;
-            partitions.push(partition);
-        }
-
-        // Read block index
-        let block_index = deserialize_from(&mut self.reader)
-            .map_err(|e| Error::Deserialization(e.to_string()))?;
-
-        Ok(PVeilFile {
-            header,
-            schema,
-            partitions,
-            block_index,
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct Header {
-    magic: [u8; 5],
-    version: u32,
-}
-
-impl Header {
-    pub fn new() -> Self {
         Self {
-            magic: *b"PVEIL",
-            version: 1,
+            reader,
+            current_pos: 0,
         }
+    }
+
+    pub fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let bytes_read = self.reader.read(buf)?;
+        self.current_pos += bytes_read as u64;
+        Ok(bytes_read)
+    }
+
+    pub fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        self.current_pos = self.reader.seek(pos)?;
+        Ok(self.current_pos)
+    }
+
+    pub fn position(&self) -> u64 {
+        self.current_pos
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_file_writer() {
+        let mut buffer = Cursor::new(Vec::new());
+        let mut writer = FileWriter::new(&mut buffer);
+
+        assert_eq!(writer.write(b"Hello").unwrap(), 5);
+        assert_eq!(writer.position(), 5);
+
+        writer.seek(SeekFrom::Start(0)).unwrap();
+        assert_eq!(writer.position(), 0);
+
+        assert_eq!(writer.write(b"World").unwrap(), 5);
+        assert_eq!(writer.position(), 5);
+
+        let data = buffer.into_inner();
+        assert_eq!(&data, b"World");
+    }
+
+    #[test]
+    fn test_file_reader() {
+        let data = b"Hello, World!";
+        let mut reader = FileReader::new(Cursor::new(data));
+
+        let mut buf = [0u8; 5];
+        assert_eq!(reader.read(&mut buf).unwrap(), 5);
+        assert_eq!(&buf, b"Hello");
+        assert_eq!(reader.position(), 5);
+
+        reader.seek(SeekFrom::Start(7)).unwrap();
+        assert_eq!(reader.position(), 7);
+
+        let mut buf = [0u8; 5];
+        assert_eq!(reader.read(&mut buf).unwrap(), 5);
+        assert_eq!(&buf, b"World");
     }
 } 
