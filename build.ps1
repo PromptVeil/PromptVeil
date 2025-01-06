@@ -62,50 +62,55 @@ if ($ForceJuliaRebuild) {
 
 # Check if we need to rebuild Julia module
 $juliaLibPath = "promptveil/core/compression/PromptVeilCore.dll"
+$juliaImportLibPath = "promptveil/core/compression/PromptVeilCore.lib"
 $juliaCachePath = "build/julia_cache"
 $needJuliaBuild = $true
+
+# Define required files based on OS
+$isWindows = $PSVersionTable.Platform -eq $null -or $PSVersionTable.Platform -eq "Win32NT"
+$isMacOS = $PSVersionTable.OS -like "*Darwin*"
+
+$requiredFiles = if ($isWindows) {
+    @(
+        "promptveil/core/compression/PromptVeilCore.dll",
+        "promptveil/core/compression/PromptVeilCore.lib",
+        "promptveil/core/compression/PromptVeilCore.exp",
+        "promptveil/core/compression/PromptVeilCore.def"
+    )
+} else {
+    @("promptveil/core/compression/PromptVeilCore.$(if ($isMacOS) { 'dylib' } else { 'so' })")
+}
 
 # Skip cache check if forcing rebuild
 if ($ForceJuliaRebuild) {
     Write-TimestampedMessage "Forcing Julia rebuild..." -Color Yellow
     $needJuliaBuild = $true
 } else {
-    # Initialize cache with existing DLL if no cache exists
-    if ((Test-Path $juliaLibPath) -and (-not (Test-Path $juliaCachePath))) {
-        Write-TimestampedMessage "Initializing Julia cache with existing DLL..." -Color Yellow
-        New-Item -ItemType Directory -Force -Path $juliaCachePath | Out-Null
-        Copy-Item $juliaLibPath "$juliaCachePath/PromptVeilCore.dll" -Force
-        
-        # Calculate and store hash of source files
-        $sourceFiles = Get-ChildItem -Path "promptveil/core/compression/TokenCompression.jl/src" -File -Recurse
-        $sourceHashes = $sourceFiles | ForEach-Object { Get-FileHash $_.FullName } | ForEach-Object { $_.Hash }
-        $combinedHash = [string]::Join("", $sourceHashes)
-        $combinedHash | Set-Content "$juliaCachePath/hash.txt"
-        
-        $needJuliaBuild = $false
-        Write-TimestampedMessage "Cache initialized with existing DLL" -Color Green
-    }
-
-    # Check if we need to rebuild by comparing hashes
-    if (Test-Path $juliaCachePath) {
-        $cachedHash = Get-Content "$juliaCachePath/hash.txt" -ErrorAction SilentlyContinue
-        
-        # Calculate current hash
-        $sourceFiles = Get-ChildItem -Path "promptveil/core/compression/TokenCompression.jl/src" -File -Recurse
-        $sourceHashes = $sourceFiles | ForEach-Object { Get-FileHash $_.FullName } | ForEach-Object { $_.Hash }
-        $currentHash = [string]::Join("", $sourceHashes)
-        
-        if ($cachedHash -eq $currentHash) {
-            Write-TimestampedMessage "Julia build is up to date, skipping..." -Color Green
-            $needJuliaBuild = $false
+    # Check if all required files exist
+    $missingFiles = $requiredFiles | Where-Object { -not (Test-Path $_) }
+    if ($missingFiles) {
+        Write-TimestampedMessage "Missing required files:" -Color Yellow
+        $missingFiles | ForEach-Object { Write-TimestampedMessage "  - $_" -Color Yellow }
+        $needJuliaBuild = $true
+    } else {
+        # Initialize cache with existing files if no cache exists
+        if (-not (Test-Path $juliaCachePath)) {
+            Write-TimestampedMessage "Initializing Julia cache with existing files..." -Color Yellow
+            New-Item -ItemType Directory -Force -Path $juliaCachePath | Out-Null
             
-            # Ensure DLL is in place
-            if (-not (Test-Path $juliaLibPath)) {
-                Write-TimestampedMessage "Restoring DLL from cache..." -Color Yellow
-                Copy-Item "$juliaCachePath/PromptVeilCore.dll" $juliaLibPath -Force
+            # Copy all required files to cache
+            foreach ($file in $requiredFiles) {
+                Copy-Item $file "$juliaCachePath/$(Split-Path -Leaf $file)" -Force
             }
-        } else {
-            Write-TimestampedMessage "Source files changed, rebuilding Julia module..." -Color Yellow
+            
+            # Calculate and store hash of source files
+            $sourceFiles = Get-ChildItem -Path "promptveil/core/compression/TokenCompression.jl/src" -File -Recurse
+            $sourceHashes = $sourceFiles | ForEach-Object { Get-FileHash $_.FullName } | ForEach-Object { $_.Hash }
+            $combinedHash = [string]::Join("", $sourceHashes)
+            $combinedHash | Set-Content "$juliaCachePath/hash.txt"
+            
+            Write-TimestampedMessage "Cache initialized with all required files" -Color Green
+            $needJuliaBuild = $false
         }
     }
 }
@@ -164,17 +169,6 @@ if (Test-Path $buildDir) {
         Write-TimestampedMessage "Forcing Rust rebuild - clearing Cargo cache..." -Color Yellow
     }
 
-    # Save venv if it exists
-    $venvPath = Join-Path $buildDir "venv"
-    $venvBackup = "venv_backup"
-    if (Test-Path $venvPath) {
-        Write-TimestampedMessage "Preserving virtual environment..." -Color Yellow
-        if (Test-Path $venvBackup) {
-            Remove-Item -Recurse -Force $venvBackup
-        }
-        Move-Item $venvPath $venvBackup
-    }
-    
     # Clean build directory but preserve specific folders
     Get-ChildItem -Path $buildDir -Exclude @("venv", "cargo_target") | Remove-Item -Recurse -Force
     
@@ -183,20 +177,24 @@ if (Test-Path $buildDir) {
         Write-TimestampedMessage "Restoring Cargo cache..." -Color Yellow
         Move-Item $cargoCacheBackup $cargoCache
     }
-
-    # Restore venv
-    if (Test-Path $venvBackup) {
-        Write-TimestampedMessage "Restoring virtual environment..." -Color Yellow
-        Move-Item $venvBackup $venvPath
-    }
 }
 
 # Create and setup Python virtual environment
 Write-TimestampedMessage "Setting up Python virtual environment..." -Color Yellow
 $venvPath = Join-Path $buildDir "venv"
-if (-not (Test-Path $venvPath)) {
-    Write-TimestampedMessage "Creating new virtual environment..." -Color Yellow
-    python -m venv $venvPath
+
+# Remove existing venv if it exists
+if (Test-Path $venvPath) {
+    Write-TimestampedMessage "Removing existing virtual environment..." -Color Yellow
+    Remove-Item -Recurse -Force $venvPath
+}
+
+# Create new venv
+Write-TimestampedMessage "Creating new virtual environment..." -Color Yellow
+python -m venv $venvPath
+if ($LASTEXITCODE -ne 0) {
+    Write-TimestampedMessage "Error: Failed to create virtual environment" -Color Red
+    exit 1
 }
 
 # Verify python.exe exists in the venv
@@ -213,6 +211,8 @@ if (-not (Test-Path $activateScript)) {
     Write-TimestampedMessage "Error: Activation script not found at: $activateScript" -Color Red
     exit 1
 }
+
+# Use & to invoke the activation script
 & $activateScript
 
 # Verify venv is activated
@@ -221,6 +221,8 @@ if (-not $currentPython.StartsWith($venvPath)) {
     Write-TimestampedMessage "Error: Virtual environment not properly activated. Current Python: $currentPython" -Color Red
     exit 1
 }
+
+Write-TimestampedMessage "Virtual environment activated successfully" -Color Green
 
 # Install pip if not present
 Write-TimestampedMessage "Checking pip installation..." -Color Yellow

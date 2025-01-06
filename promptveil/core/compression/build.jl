@@ -1,147 +1,108 @@
-# First, run the setup
-println("Running setup...")
-include("setup.jl")
-
-# Now we can safely import PackageCompiler
-println("Loading PackageCompiler...")
-using PackageCompiler
-
-println("Starting system image compilation...")
-
-# Determine the correct library extension for each operating system
-const LIB_EXTENSION = @static if Sys.iswindows()
-    "dll"
-elseif Sys.isapple()
-    "dylib"
+# Check required files first
+const REQUIRED_FILES = @static if Sys.iswindows()
+    [
+        "PromptVeilCore.dll",
+        "PromptVeilCore.lib",
+        "PromptVeilCore.exp",
+        "PromptVeilCore.def"
+    ]
 else
-    "so"
+    ["PromptVeilCore.$(Sys.isapple() ? "dylib" : "so")"]
 end
 
-# Output library path
-const OUTPUT_LIB = "PromptVeilCore.$(LIB_EXTENSION)"
+# Check what files are missing
+const MISSING_FILES = filter(!isfile, REQUIRED_FILES)
 
-try
-    # Compile our package into a shared library
-    create_sysimage(
-        ["PromptVeilCore", "TokenCompression", "SIMD", "CUDA"],
-        sysimage_path=OUTPUT_LIB,
-        precompile_execution_file="test/runtests.jl",
-        cpu_target="native"
-    )
-    println("Successfully compiled system image to: $OUTPUT_LIB")
-catch e
-    println("Error during compilation:")
-    println(e)
-    exit(1)
-end
-
-# Get Julia installation directory for Rust linking
-julia_dir = dirname(dirname(Sys.BINDIR))
-println("JULIA_DIR=$julia_dir")
-
-# Verify if library was created
-if !isfile(OUTPUT_LIB)
-    println("Error: Failed to create library file: $OUTPUT_LIB")
-    exit(1)
-end
-
-# On Windows, generate import files
-@static if Sys.iswindows()
-    # Find Visual Studio installation
-    function find_vs_installation()
-        vswhere = joinpath(ENV["ProgramFiles (x86)"], "Microsoft Visual Studio", "Installer", "vswhere.exe")
+# If we have the DLL but missing other files on Windows, try to generate them first
+if Sys.iswindows() && isfile("PromptVeilCore.dll") && !isempty(MISSING_FILES)
+    println("Found DLL but missing import files. Attempting to generate them...")
+    
+    try
+        # Find Visual Studio
+        program_files_x86 = get(ENV, "ProgramFiles(x86)", get(ENV, "PROGRAMFILES(X86)", nothing))
+        if program_files_x86 === nothing
+            error("Could not find Program Files (x86) directory")
+        end
+        
+        # Find vswhere
+        vswhere = joinpath(program_files_x86, "Microsoft Visual Studio", "Installer", "vswhere.exe")
         if !isfile(vswhere)
             error("vswhere.exe not found. Please install Visual Studio with C++ support.")
         end
         
-        # Use vswhere to find latest VS installation
-        vs_path = read(`$vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`, String)
+        # Get VS path
+        vs_path = strip(read(`"$vswhere" -latest -products "*" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`, String))
         if isempty(vs_path)
             error("Visual Studio with C++ tools not found")
         end
-        return strip(vs_path)
-    end
-
-    function find_lib_exe(vs_path)
-        # Find latest MSVC tools version
+        
+        # Find lib.exe
         vc_tools = joinpath(vs_path, "VC", "Tools", "MSVC")
-        if !isdir(vc_tools)
-            error("MSVC tools directory not found")
-        end
-        
-        versions = readdir(vc_tools)
-        if isempty(versions)
-            error("No MSVC versions found")
-        end
-        
-        latest_ver = sort(versions)[end]
+        latest_ver = sort(readdir(vc_tools))[end]
         lib_exe = joinpath(vc_tools, latest_ver, "bin", "Hostx64", "x64", "lib.exe")
         
         if !isfile(lib_exe)
             error("lib.exe not found at: $lib_exe")
         end
         
-        return lib_exe
-    end
-
-    # List of functions to export
-    const EXPORTED_FUNCTIONS = [
-        # Core Julia functions needed by Rust
-        "jl_init",
-        "jl_eval_string",
-        "jl_call",
-        "jl_box_float64",
-        "jl_unbox_float64",
-        "jl_symbol",
-        "jl_get_global",
-        "jl_get_function",
-        # Our compression functions
-        "compress_tokens",
-        "decompress_tokens",
-        "init_compression",
-        "cleanup_compression",
-        # CUDA-related functions
-        "has_cuda_gpu",
-        "init_cuda",
-        "cleanup_cuda"
-    ]
-
-    println("Setting up Windows import library generation...")
-    
-    try
-        vs_path = find_vs_installation()
-        lib_exe = find_lib_exe(vs_path)
-        
-        # Generate .def file with all exports
+        # Generate .def file
         println("Generating .def file...")
-        def_file = "PromptVeilCore.def"
-        open(def_file, "w") do f
+        open("PromptVeilCore.def", "w") do f
             println(f, "LIBRARY PromptVeilCore")
             println(f, "EXPORTS")
-            for func in EXPORTED_FUNCTIONS
-                println(f, "    $func")
-            end
+            # Core Julia functions
+            println(f, "    jl_init")
+            println(f, "    jl_eval_string")
+            println(f, "    jl_call")
+            println(f, "    jl_box_float64")
+            println(f, "    jl_unbox_float64")
+            println(f, "    jl_symbol")
+            println(f, "    jl_get_global")
+            println(f, "    jl_get_function")
+            # Our functions
+            println(f, "    compress_tokens")
+            println(f, "    decompress_tokens")
+            println(f, "    init_compression")
+            println(f, "    cleanup_compression")
+            println(f, "    has_cuda_gpu")
+            println(f, "    init_cuda")
+            println(f, "    cleanup_cuda")
         end
         
         # Generate .lib file
         println("Generating import library...")
-        lib_cmd = `"$lib_exe" /def:$def_file /out:PromptVeilCore.lib /machine:x64`
-        println("Running: $lib_cmd")
-        run(lib_cmd)
+        run(`"$lib_exe" /def:PromptVeilCore.def /out:PromptVeilCore.lib /machine:x64`)
         
-        # Verify files were created
-        for file in ["PromptVeilCore.lib", "PromptVeilCore.exp", def_file]
-            if isfile(file)
-                println("Successfully generated: $file")
-            else
+        # Verify generated files
+        for file in ["PromptVeilCore.lib", "PromptVeilCore.exp", "PromptVeilCore.def"]
+            if !isfile(file)
                 error("Failed to generate: $file")
             end
+            println("Successfully generated: $file")
         end
+        
+        exit(0) # Success, no need to continue
     catch e
-        println("Error during import library generation:")
-        println(e)
-        exit(1)
+        println("Error generating import files: $e")
+        println("Falling back to full build...")
     end
 end
 
-println("Build completed successfully!") 
+# If we're here, we need a full build
+println("Running setup...")
+include("setup.jl")
+
+println("Loading PackageCompiler...")
+using PackageCompiler
+
+if !isfile("PromptVeilCore.dll")
+    println("Compiling system image...")
+    create_sysimage(
+        ["PromptVeilCore", "TokenCompression", "SIMD", "CUDA"],
+        sysimage_path="PromptVeilCore.dll",
+        precompile_execution_file="test/runtests.jl",
+        cpu_target="native"
+    )
+end
+
+# The rest of the build process will be handled by the previous error handler if needed 
