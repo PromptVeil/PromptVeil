@@ -11,16 +11,6 @@ check_command() {
     return 0
 }
 
-# Function to check Julia version
-check_julia_version() {
-    local version=$(julia --version | cut -d' ' -f3)
-    if [[ "$version" < "1.6.0" ]]; then
-        echo "Error: Julia version must be >= 1.6.0 (found $version)"
-        return 1
-    fi
-    return 0
-}
-
 # Function to compare version strings
 version_compare() {
     local v1=($1)
@@ -34,6 +24,20 @@ version_compare() {
         fi
     done
     return 1
+}
+
+# Function to check Julia version
+check_julia_version() {
+    local version=$(julia --version | cut -d' ' -f3)
+    local min_version="1.6.0"
+    local version_parts=(${version//./ })
+    local min_version_parts=(${min_version//./ })
+    
+    if version_compare "${version_parts[*]}" "${min_version_parts[*]}"; then
+        echo "Error: Julia version must be >= $min_version (found $version)"
+        return 1
+    fi
+    return 0
 }
 
 # Function to check Python version
@@ -53,8 +57,12 @@ check_python_version() {
 # Function to check Rust version
 check_rust_version() {
     local version=$(rustc --version | cut -d' ' -f2)
-    if [[ "$version" < "1.70.0" ]]; then
-        echo "Error: Rust version must be >= 1.70.0 (found $version)"
+    local min_version="1.70.0"
+    local version_parts=(${version//./ })
+    local min_version_parts=(${min_version//./ })
+    
+    if version_compare "${version_parts[*]}" "${min_version_parts[*]}"; then
+        echo "Error: Rust version must be >= $min_version (found $version)"
         return 1
     fi
     return 0
