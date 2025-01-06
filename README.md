@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="promptveil\docs\images\promptveil_logo.png" alt="PromptVeil Logo">
+  <img src="promptveil\docs\images\promptveil_logo_2.png" alt="PromptVeil Logo" width="501" height="149">
 </p>
 
 <h1 align="center">PromptVeil</h1>
