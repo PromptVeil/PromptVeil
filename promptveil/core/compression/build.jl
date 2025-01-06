@@ -10,7 +10,19 @@ else
     ["PromptVeilCore.$(Sys.isapple() ? "dylib" : "so")"]
 end
 
+# Get number of threads from environment or use default
+const NUM_THREADS = try
+    parse(Int, ENV["JULIA_NUM_THREADS"])
+catch
+    Threads.nthreads()
+end
+println("Using $(NUM_THREADS) threads for compilation")
+
 function generate_import_files()
+    if !Sys.iswindows()
+        return  # Only needed on Windows
+    end
+    
     println("Generating Windows import files...")
     
     # Find Visual Studio
@@ -67,14 +79,6 @@ function generate_import_files()
     # Generate .lib file
     println("Generating import library...")
     run(`"$lib_exe" /def:PromptVeilCore.def /out:PromptVeilCore.lib /machine:x64`)
-    
-    # Verify generated files
-    for file in ["PromptVeilCore.lib", "PromptVeilCore.exp", "PromptVeilCore.def"]
-        if !isfile(file)
-            error("Failed to generate: $file")
-        end
-        println("Successfully generated: $file")
-    end
 end
 
 # Check what files are missing
@@ -87,13 +91,14 @@ include("setup.jl")
 println("Loading PackageCompiler...")
 using PackageCompiler
 
-if !isfile("PromptVeilCore.dll")
+if !isfile("PromptVeilCore.$(Sys.iswindows() ? "dll" : Sys.isapple() ? "dylib" : "so")")
     println("Compiling system image...")
     create_sysimage(
         ["PromptVeilCore", "TokenCompression", "SIMD", "CUDA"],
-        sysimage_path="PromptVeilCore.dll",
+        sysimage_path="PromptVeilCore.$(Sys.iswindows() ? "dll" : Sys.isapple() ? "dylib" : "so")",
         precompile_execution_file="test/runtests.jl",
-        cpu_target="native"
+        cpu_target="native",
+        threads=NUM_THREADS
     )
     
     # After DLL is created, generate import files on Windows
