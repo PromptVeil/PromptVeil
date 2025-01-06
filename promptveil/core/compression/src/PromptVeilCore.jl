@@ -6,6 +6,31 @@ using TokenCompression
 # Export our functions
 export optimize_tokens_simd, compress_batch_gpu, decompress_batch_gpu
 export julia_optimize_tokens_config, julia_compress_batch_config, julia_decompress_batch
+export julia_init, julia_cleanup
+
+"""
+    julia_init()
+
+Initialize the Julia runtime for FFI calls.
+"""
+Base.@ccallable function julia_init()::Cvoid
+    println("DEBUG Julia: Initializing runtime")
+    # Initialize any required state here
+    println("DEBUG Julia: Runtime initialized")
+    return nothing
+end
+
+"""
+    julia_cleanup()
+
+Cleanup the Julia runtime after FFI calls.
+"""
+Base.@ccallable function julia_cleanup()::Cvoid
+    println("DEBUG Julia: Cleaning up runtime")
+    # Cleanup any state here
+    println("DEBUG Julia: Runtime cleaned up")
+    return nothing
+end
 
 """
     optimize_tokens_simd(tokens::Vector{UInt32})
@@ -135,12 +160,40 @@ Base.@ccallable function julia_compress_batch_config(
     use_simd::Bool,
     use_patterns::Bool
 )::Ptr{UInt32}
-    tokens = unsafe_wrap(Array, ptr, (rows, cols))
-    result = compress_batch_gpu(tokens)
+    println("DEBUG Julia: Entering julia_compress_batch_config")
+    println("DEBUG Julia: Input dimensions: $(rows)x$(cols)")
+    println("DEBUG Julia: Configuration - GPU: $use_gpu, SIMD: $use_simd, Patterns: $use_patterns")
     
-    result_ptr = Base.Libc.malloc(sizeof(UInt32) * length(result))
-    unsafe_copyto!(Ptr{UInt32}(result_ptr), pointer(result), length(result))
-    return Ptr{UInt32}(result_ptr)
+    try
+        println("DEBUG Julia: Converting input pointer to Array")
+        tokens = unsafe_wrap(Array, ptr, (rows, cols))
+        println("DEBUG Julia: Array dimensions: $(size(tokens))")
+        println("DEBUG Julia: First few values: $(tokens[1:min(10,end), 1])")
+        
+        println("DEBUG Julia: Calling compress_batch_gpu")
+        result = compress_batch_gpu(tokens)
+        println("DEBUG Julia: Compression complete")
+        println("DEBUG Julia: Result dimensions: $(size(result))")
+        println("DEBUG Julia: First few compressed values: $(result[1:min(10,end)])")
+        
+        println("DEBUG Julia: Allocating result memory")
+        result_ptr = Base.Libc.malloc(sizeof(UInt32) * length(result))
+        println("DEBUG Julia: Result pointer: $result_ptr")
+        
+        println("DEBUG Julia: Copying result to output buffer")
+        unsafe_copyto!(Ptr{UInt32}(result_ptr), pointer(result), length(result))
+        println("DEBUG Julia: Copy complete")
+        
+        return Ptr{UInt32}(result_ptr)
+    catch e
+        println("DEBUG Julia: Error occurred: $e")
+        println("DEBUG Julia: Backtrace:")
+        for (exc, bt) in Base.catch_stack()
+            showerror(stdout, exc, bt)
+            println()
+        end
+        rethrow(e)
+    end
 end
 
 """

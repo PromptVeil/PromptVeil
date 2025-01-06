@@ -4,6 +4,12 @@
 
 <h1 align="center">PromptVeil</h1>
 
+<h2 align="center">🚧 COMING SOON! 🚧</h2>
+<p align="center">
+  <strong>This repository is under active development and will be officially launched soon.<br>
+  Star and watch the repo to get notified when we launch!</strong>
+</p>
+
 > **tl;dr:** An open-source framework that lets you store, compress, and query LLM conversations with hardware-accelerated security and token-aware compression. From single files to distributed storage, from personal storage to enterprise data lakes.
 
 <h3 align="center">Open Source Framework for LLM Conversation Management</h3>
@@ -15,10 +21,10 @@
 <p align="center">
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.7+-blue.svg" alt="Python 3.7+"></a>
-  <a href="https://github.com/PromptVeil/PromptVeil/actions"><img src="https://github.com/PromptVeil/PromptVeil/workflows/Build%20Matrix/badge.svg" alt="Build Status"></a>
-  <a href="https://pypi.org/project/promptveil/"><img src="https://img.shields.io/pypi/v/promptveil.svg" alt="PyPI version"></a>
+  <!-- Build status badge removed since CI not set up yet -->
+  <!-- PyPI version badge removed since package not published yet -->
   <a href="https://github.com/PromptVeil/PromptVeil"><img src="https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey" alt="Platform"></a>
-  <a href="docs/ARCHITECTURE.md"><img src="https://img.shields.io/badge/docs-available-brightgreen.svg" alt="Documentation"></a>
+  <!-- Documentation badge removed since docs not available yet -->
   <a href="docs/CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
 </p>
 
@@ -44,7 +50,7 @@ PromptVeil is an open-source framework designed to solve the challenges of stori
 - 🔒 **Security First**: Hardware-accelerated encryption, secure key management
 - 🚀 **High Performance**: GPU-accelerated compression, parallel processing
 - 🔍 **Smart Search**: Advanced indexing with relevance ranking
-- 🎯 **Production Ready**: Battle-tested in enterprise environments
+- 🎯 **Production Ready**: Designed with enterprise-grade standards in mind
 
 ## Technical Details
 
@@ -153,12 +159,25 @@ See our [Contributing Guide](docs/CONTRIBUTING.md) for details on how to get sta
 
 ```mermaid
 graph TD
-    A[Python API] --> B[Store Manager]
-    B --> C[Security Layer]
-    B --> D[Index Manager]
-    B --> E[Compression Layer]
-    C --> F[Rust Core]
-    E --> G[Julia Core]
+    A[Application Layer] <-->|Conversation| B[Store Manager]
+    
+    B <-->|Encrypted Conversation| C[Security Service]
+    B <-->|Compressed Conversation| D[Storage Service]
+    B <-->|Indexed Conversation| E[Search Service]
+    
+    subgraph Core Services
+        C <-->|Secured Data| C1[Encryption]
+        C <-->|Keys| C2[Key Management]
+        
+        D <-->|Binary Data| D1[Compression]
+        D <-->|.pveil format| D2[File Format]
+        
+        E <-->|Metadata + Content| E1[Indexing]
+        E <-->|Search Results| E2[Query Engine]
+    end
+
+    classDef entity fill:#f9f,stroke:#333,stroke-width:2px;
+    class Conversation entity;
 ```
 
 For detailed architecture documentation, see:
@@ -173,10 +192,10 @@ For detailed architecture documentation, see:
 
 | Operation | Performance | Notes |
 |-----------|------------|--------|
-| Compression | Up to 90% | Token-aware, content-dependent |
-| Encryption | ~1GB/s | Hardware-accelerated |
-| Search | <100ms | For typical conversation stores |
-| GPU Speedup | 5-10x | When available |
+| Compression | TBD | Token-aware, content-dependent |
+| Encryption | TBD | Hardware-accelerated |
+| Search | TBD | For typical conversation stores |
+| GPU Speedup | TBD | When available |
 
 ## Framework Extensions
 
@@ -198,20 +217,10 @@ See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
 
 ## Community
 
-- [Technical Blog](https://blog.promptveil.dev)
-- [Discord Server](https://discord.gg/promptveil)
-- [GitHub Discussions](https://github.com/yourusername/promptveil/discussions)
+- Technical Blog (Coming Soon)
+- Discord Server (Coming Soon) 
+- GitHub Discussions (Coming Soon)
 
 ## License
 
 MIT License - See [LICENSE](LICENSE)
-
-## Acknowledgments
-
-- Julia Community for compression insights
-- Rust Security Team for cryptographic guidance
-- Our amazing contributors
-
----
-
-<p align="center">Built with ❤️ by developers, for developers</p>
