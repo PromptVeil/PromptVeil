@@ -3,6 +3,14 @@ using Pkg
 # Ensure we're in the right environment
 Pkg.activate(@__DIR__)
 
+# Develop local TokenCompression package
+token_compression_path = joinpath(@__DIR__, "TokenCompression.jl")
+if isdir(token_compression_path)
+    Pkg.develop(path=token_compression_path)
+else
+    error("TokenCompression.jl not found at $token_compression_path")
+end
+
 # Add registries if needed
 if !isfile(joinpath(DEPOT_PATH[1], "registries", "General", "Registry.toml"))
     Pkg.Registry.add("General")
@@ -21,14 +29,6 @@ Pkg.add([
     "LinearAlgebra",
     "Statistics"
 ])
-
-# Develop local TokenCompression package
-token_compression_path = joinpath(@__DIR__, "TokenCompression.jl")
-if isdir(token_compression_path)
-    Pkg.develop(path=token_compression_path)
-else
-    error("TokenCompression.jl not found at $token_compression_path")
-end
 
 # Build CUDA if available
 try
