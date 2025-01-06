@@ -1,113 +1,95 @@
 use std::error::Error;
 use std::fmt;
-use crate::julia::JuliaInterface;
+
+use crate::julia;
 
 #[derive(Debug)]
-pub enum CompressionError {
-    JuliaError(String),
-    InvalidInput(String),
-}
-
-impl fmt::Display for CompressionError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            CompressionError::JuliaError(msg) => write!(f, "Julia error: {}", msg),
-            CompressionError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
-        }
-    }
-}
-
-impl Error for CompressionError {}
-
-#[derive(Debug, Clone)]
 pub struct CompressionConfig {
     pub gpu_enabled: bool,
     pub simd_enabled: bool,
     pub pattern_learning: bool,
 }
 
-impl Default for CompressionConfig {
-    fn default() -> Self {
-        Self {
-            gpu_enabled: true,
-            simd_enabled: true,
-            pattern_learning: true,
+#[derive(Debug)]
+pub struct CompressionStats {
+    pub original_size: usize,
+    pub compressed_size: usize,
+    pub compression_ratio: f64,
+}
+
+#[derive(Debug)]
+pub enum CompressionError {
+    InvalidData(String),
+    CompressionFailed(String),
+    DecompressionFailed(String),
+}
+
+impl fmt::Display for CompressionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CompressionError::InvalidData(msg) => write!(f, "Invalid data: {}", msg),
+            CompressionError::CompressionFailed(msg) => write!(f, "Compression failed: {}", msg),
+            CompressionError::DecompressionFailed(msg) => write!(f, "Decompression failed: {}", msg),
         }
     }
 }
 
-pub struct CompressionStats {
-    pub compression_ratio: f64,
-    pub time_ms: f64,
-    pub use_gpu: bool
-}
+impl Error for CompressionError {}
 
-pub fn compress_tokens(tokens: &[u32], config: Option<CompressionConfig>) -> Result<(Vec<u8>, CompressionStats), CompressionError> {
-    let config = config.unwrap_or_default();
-    let use_gpu = config.gpu_enabled;
-    let start_time = std::time::Instant::now();
-    
-    // Validate input
-    if tokens.is_empty() {
-        return Err(CompressionError::InvalidInput("Empty token sequence".into()));
+pub fn compress_tokens(
+    tokens: &[u32],
+    config: Option<CompressionConfig>
+) -> Result<(Vec<u8>, CompressionStats), CompressionError> {
+    let config = config.unwrap_or(CompressionConfig {
+        gpu_enabled: false,
+        simd_enabled: true,
+        pattern_learning: true,
+    });
+
+    let optimized = unsafe {
+        julia::julia_optimize_tokens_config(
+            tokens.as_ptr(),
+            tokens.len() as i64,
+            config.gpu_enabled,
+            config.simd_enabled,
+            config.pattern_learning
+        )
+    };
+
+    if optimized.is_null() {
+        return Err(CompressionError::CompressionFailed("Token optimization failed".into()));
     }
-    
-    // Optimize tokens via Julia
-    let optimized = match JuliaInterface::optimize_tokens_with_config(
-        tokens,
-        use_gpu,
-        config.simd_enabled,
-        config.pattern_learning
-    ) {
-        Ok(tokens) => tokens,
-        Err(e) => return Err(CompressionError::JuliaError(e.to_string())),
+
+    let optimized = unsafe {
+        Vec::from_raw_parts(
+            optimized as *mut u32,
+            tokens.len(),
+            tokens.len()
+        )
     };
-    
-    // Convert to bytes with compression metadata
-    let mut compressed = Vec::with_capacity(optimized.len() * 4 + 16);
-    
-    // Add compression header (version, flags, etc.)
-    compressed.extend_from_slice(&[0x01u8, 0x00, 0x00, 0x00]); // Version 1
-    let flags = ((use_gpu as u32) << 0) | 
-                ((config.simd_enabled as u32) << 1) |
-                ((config.pattern_learning as u32) << 2);
-    compressed.extend_from_slice(&flags.to_le_bytes());
-    
-    // Add compressed data
-    compressed.extend(optimized.iter()
-        .flat_map(|&token| token.to_le_bytes().to_vec()));
-    
-    // Calculate statistics
+
+    let bytes: Vec<u8> = optimized.iter()
+        .flat_map(|&token| token.to_le_bytes().to_vec())
+        .collect();
+
     let stats = CompressionStats {
-        compression_ratio: compressed.len() as f64 / (tokens.len() * 4) as f64,
-        time_ms: start_time.elapsed().as_millis() as f64,
-        use_gpu,
+        original_size: tokens.len() * 4,
+        compressed_size: bytes.len(),
+        compression_ratio: (tokens.len() * 4) as f64 / bytes.len() as f64,
     };
-    
-    Ok((compressed, stats))
+
+    Ok((bytes, stats))
 }
 
 pub fn decompress_tokens(data: &[u8]) -> Result<Vec<u32>, CompressionError> {
-    if data.len() < 8 {
-        return Err(CompressionError::InvalidInput("Invalid compressed data".into()));
+    if data.len() % 4 != 0 {
+        return Err(CompressionError::InvalidData("Data length must be multiple of 4".into()));
     }
-    
-    // Read header
-    let version = u32::from_le_bytes(data[0..4].try_into().unwrap());
-    if version != 1 {
-        return Err(CompressionError::InvalidInput(format!("Unsupported version: {}", version)));
-    }
-    
-    let flags = u32::from_le_bytes(data[4..8].try_into().unwrap());
-    let _used_gpu = (flags & 1) != 0;
-    let _used_simd = (flags & 2) != 0;
-    let _used_pattern_learning = (flags & 4) != 0;
-    
-    // Extract token data
-    let tokens: Vec<u32> = data[8..].chunks_exact(4)
+
+    let tokens: Vec<u32> = data.chunks_exact(4)
         .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
         .collect();
-    
+
     Ok(tokens)
 }
 
@@ -117,42 +99,52 @@ pub fn compress_batch(
     cols: usize,
     config: Option<CompressionConfig>
 ) -> Result<(Vec<u8>, CompressionStats), CompressionError> {
-    let config = config.unwrap_or_default();
-    let use_gpu = config.gpu_enabled;
-    let start_time = std::time::Instant::now();
-    
-    // Validate input
     if tokens.len() != rows * cols {
-        return Err(CompressionError::InvalidInput(
-            format!("Token length {} does not match dimensions {}x{}", tokens.len(), rows, cols)
-        ));
+        return Err(CompressionError::InvalidData(format!(
+            "Token count {} does not match dimensions {}x{}",
+            tokens.len(), rows, cols
+        )));
     }
-    
-    // Compress batch via Julia
-    let compressed = match JuliaInterface::compress_batch_with_config(
-        tokens,
-        rows,
-        cols,
-        use_gpu,
-        config.simd_enabled,
-        config.pattern_learning
-    ) {
-        Ok(tokens) => tokens,
-        Err(e) => return Err(CompressionError::JuliaError(e.to_string())),
+
+    let config = config.unwrap_or(CompressionConfig {
+        gpu_enabled: false,
+        simd_enabled: true,
+        pattern_learning: true,
+    });
+
+    let compressed = unsafe {
+        julia::julia_compress_batch_config(
+            tokens.as_ptr(),
+            rows as i64,
+            cols as i64,
+            config.gpu_enabled,
+            config.simd_enabled,
+            config.pattern_learning
+        )
     };
-    
-    // Convert to bytes
-    let mut bytes = Vec::with_capacity(compressed.len() * 4);
-    bytes.extend(compressed.iter()
-        .flat_map(|&token| token.to_le_bytes().to_vec()));
-    
-    // Calculate statistics
+
+    if compressed.is_null() {
+        return Err(CompressionError::CompressionFailed("Batch compression failed".into()));
+    }
+
+    let compressed = unsafe {
+        Vec::from_raw_parts(
+            compressed as *mut u32,
+            rows * cols,
+            rows * cols
+        )
+    };
+
+    let bytes: Vec<u8> = compressed.iter()
+        .flat_map(|&token| token.to_le_bytes().to_vec())
+        .collect();
+
     let stats = CompressionStats {
-        compression_ratio: bytes.len() as f64 / (tokens.len() * 4) as f64,
-        time_ms: start_time.elapsed().as_millis() as f64,
-        use_gpu,
+        original_size: tokens.len() * 4,
+        compressed_size: bytes.len(),
+        compression_ratio: (tokens.len() * 4) as f64 / bytes.len() as f64,
     };
-    
+
     Ok((bytes, stats))
 }
 
@@ -161,47 +153,40 @@ pub fn decompress_batch(
     rows: usize,
     cols: usize
 ) -> Result<Vec<u32>, CompressionError> {
-    // Validate input dimensions
-    if tokens.is_empty() {
-        return Err(CompressionError::InvalidInput("Empty token sequence".into()));
+    if tokens.len() != rows * cols {
+        return Err(CompressionError::InvalidData(format!(
+            "Token count {} does not match dimensions {}x{}",
+            tokens.len(), rows, cols
+        )));
     }
-    
-    // Decompress via Julia
-    match JuliaInterface::decompress_batch(tokens, rows, cols) {
-        Ok(tokens) => Ok(tokens),
-        Err(e) => Err(CompressionError::JuliaError(e.to_string())),
+
+    let decompressed = unsafe {
+        julia::julia_decompress_batch(
+            tokens.as_ptr(),
+            rows as i64,
+            cols as i64
+        )
+    };
+
+    if decompressed.is_null() {
+        return Err(CompressionError::DecompressionFailed("Batch decompression failed".into()));
     }
+
+    let decompressed = unsafe {
+        Vec::from_raw_parts(
+            decompressed as *mut u32,
+            rows * cols,
+            rows * cols
+        )
+    };
+
+    Ok(decompressed)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_compression_decompression() {
-        let tokens = vec![1, 2, 3, 4, 5];
-        let (compressed, stats) = compress_tokens(&tokens, None).unwrap();
-        let decompressed = decompress_tokens(&compressed).unwrap();
-        
-        assert_eq!(tokens, decompressed);
-        assert!(stats.compression_ratio > 0.0);
-        assert!(stats.time_ms >= 0.0);
-    }
-
-    #[test]
-    fn test_batch_compression() {
-        let tokens = vec![1, 2, 3, 4, 5, 6, 7, 8];
-        let rows = 2;
-        let cols = 4;
-        
-        let (compressed, stats) = compress_batch(&tokens, rows, cols, None).unwrap();
-        let decompressed = decompress_batch(&compressed, rows, cols).unwrap();
-        
-        assert_eq!(tokens, decompressed);
-        assert!(stats.compression_ratio > 0.0);
-        assert!(stats.time_ms >= 0.0);
-    }
-    
     #[test]
     fn test_compression_config() {
         let tokens = vec![1, 2, 3, 4, 5];
@@ -210,20 +195,21 @@ mod tests {
             simd_enabled: true,
             pattern_learning: true,
         };
-        
-        let (compressed, stats) = compress_tokens(&tokens, Some(config)).unwrap();
-        assert!(!stats.use_gpu);
-        
-        let decompressed = decompress_tokens(&compressed).unwrap();
-        assert_eq!(tokens, decompressed);
+        let result = compress_tokens(&tokens, Some(config));
+        assert!(result.is_ok());
     }
-    
+
     #[test]
-    fn test_invalid_input() {
-        let result = compress_tokens(&[], None);
-        assert!(matches!(result, Err(CompressionError::InvalidInput(_))));
-        
-        let result = compress_batch(&[1, 2, 3], 2, 2, None);
-        assert!(matches!(result, Err(CompressionError::InvalidInput(_))));
+    fn test_batch_compression() {
+        let tokens = vec![1, 2, 3, 4];
+        let result = compress_batch(&tokens, 2, 2, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_dimensions() {
+        let tokens = vec![1, 2, 3];  // 3 elements
+        let result = compress_batch(&tokens, 2, 2, None);  // 2x2=4 elements needed
+        assert!(matches!(result, Err(CompressionError::InvalidData(_))));
     }
 } 

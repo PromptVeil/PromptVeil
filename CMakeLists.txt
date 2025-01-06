@@ -141,16 +141,7 @@ add_custom_target(python_dependencies
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/promptveil/python
 )
 
-# Build and install core package first
-add_custom_target(python_core_package
-    COMMAND ${CMAKE_COMMAND} -E env 
-        PROMPTVEIL_JULIA_PATH=${JULIA_BUILD_PATH}
-        PROMPTVEIL_RUST_PATH=${CMAKE_BINARY_DIR}
-        ${Python3_EXECUTABLE} -m pip install -e .
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/promptveil/core/python
-)
-
-# Then install main package
+# Install main package (includes core)
 add_custom_target(python_package ALL
     COMMAND ${CMAKE_COMMAND} -E env 
         PROMPTVEIL_JULIA_PATH=${JULIA_BUILD_PATH}
@@ -160,20 +151,27 @@ add_custom_target(python_package ALL
 )
 
 # Dependencies
-add_dependencies(python_core_package python_dependencies)
-add_dependencies(python_package python_core_package)
-add_dependencies(rust_security julia_core)
-add_dependencies(rust_format julia_core)
-add_dependencies(python_package rust_security rust_format)
+add_dependencies(python_package python_dependencies)
+add_dependencies(python_package rust_security rust_format julia_core)
 
-# Copy Rust DLL to Python package directory
+# Copy Rust DLL and setup Python package
 if(WIN32)
+    # Copy to package source
+    add_custom_command(
+        TARGET python_package POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            ${CARGO_TARGET_DIR}/release/promptveil_core.dll
+            ${CMAKE_SOURCE_DIR}/promptveil/python/promptveil/core/
+        COMMENT "Copying Rust DLL to Python package source"
+    )
+    
+    # Copy to site-packages and generate __init__.py
     add_custom_command(
         TARGET python_package POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
             ${CARGO_TARGET_DIR}/release/promptveil_core.dll
             ${CMAKE_SOURCE_DIR}/build/venv/Lib/site-packages/promptveil_core/
-        COMMENT "Copying Rust DLL to Python package directory"
+        COMMENT "Copying Rust DLL to site-packages"
     )
     
     # Generate __init__.py with correct imports
