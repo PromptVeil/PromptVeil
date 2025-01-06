@@ -14,14 +14,21 @@ Pkg.update()
 # Ensure CUDA is at version 5
 Pkg.add(name="CUDA", version="5")
 
-# Add other dependencies
+# Add standard dependencies
 Pkg.add([
     "PackageCompiler",
     "SIMD",
     "LinearAlgebra",
-    "Statistics",
-    "TokenCompression"
+    "Statistics"
 ])
+
+# Develop local TokenCompression package
+token_compression_path = joinpath(@__DIR__, "TokenCompression.jl")
+if isdir(token_compression_path)
+    Pkg.develop(path=token_compression_path)
+else
+    error("TokenCompression.jl not found at $token_compression_path")
+end
 
 # Build CUDA if available
 try
