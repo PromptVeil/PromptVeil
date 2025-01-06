@@ -141,6 +141,16 @@ add_custom_target(python_dependencies
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/promptveil/python
 )
 
+# Build and install core package first
+add_custom_target(python_core_package
+    COMMAND ${CMAKE_COMMAND} -E env 
+        PROMPTVEIL_JULIA_PATH=${JULIA_BUILD_PATH}
+        PROMPTVEIL_RUST_PATH=${CMAKE_BINARY_DIR}
+        ${Python3_EXECUTABLE} -m pip install -e .
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/promptveil/core/python
+)
+
+# Then install main package
 add_custom_target(python_package ALL
     COMMAND ${CMAKE_COMMAND} -E env 
         PROMPTVEIL_JULIA_PATH=${JULIA_BUILD_PATH}
@@ -148,6 +158,13 @@ add_custom_target(python_package ALL
         ${Python3_EXECUTABLE} -m pip install -e .
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/promptveil/python
 )
+
+# Dependencies
+add_dependencies(python_core_package python_dependencies)
+add_dependencies(python_package python_core_package)
+add_dependencies(rust_security julia_core)
+add_dependencies(rust_format julia_core)
+add_dependencies(python_package rust_security rust_format)
 
 # Copy Rust DLL to Python package directory
 if(WIN32)
@@ -158,13 +175,19 @@ if(WIN32)
             ${CMAKE_SOURCE_DIR}/build/venv/Lib/site-packages/promptveil_core/
         COMMENT "Copying Rust DLL to Python package directory"
     )
+    
+    # Generate __init__.py with correct imports
+    file(WRITE ${CMAKE_SOURCE_DIR}/build/venv/Lib/site-packages/promptveil_core/__init__.py
+        "import importlib.util\n"
+        "import sys\n\n"
+        "# Get the module spec for the platform-specific extension\n"
+        "if importlib.util.find_spec(\"promptveil_core.promptveil_core\"):\n"
+        "    from .promptveil_core import *\n"
+        "    __doc__ = promptveil_core.__doc__\n"
+        "    if hasattr(promptveil_core, \"__all__\"):\n"
+        "        __all__ = promptveil_core.__all__\n"
+    )
 endif()
-
-# Dependencies
-add_dependencies(python_package python_dependencies)
-add_dependencies(rust_security julia_core)
-add_dependencies(rust_format julia_core)
-add_dependencies(python_package rust_security rust_format)
 
 # Tests
 if(BUILD_TESTS)

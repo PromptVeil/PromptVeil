@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .exceptions import CompressionError
+import promptveil_core
 
 
 @dataclass
@@ -85,8 +86,7 @@ class TokenCompressor:
             tokens_array = np.array(tokens, dtype=np.uint32)
             
             # Call Rust compression
-            from ._promptveil_core import compress_tokens
-            compressed, stats = compress_tokens(
+            compressed, stats = promptveil_core.compress_tokens(
                 tokens_array,
                 self.config.gpu_enabled,
                 self.config.batch_size,
@@ -121,8 +121,7 @@ class TokenCompressor:
         """
         try:
             # Call Rust decompression
-            from ._promptveil_core import decompress_tokens
-            tokens = decompress_tokens(data)
+            tokens = promptveil_core.decompress_tokens(data)
             return tokens.tolist()
             
         except Exception as e:
@@ -150,8 +149,7 @@ class TokenCompressor:
                 raise ValueError("Input must be a 2D array")
                 
             # Call Rust batch compression
-            from ._promptveil_core import compress_batch
-            compressed, stats = compress_batch(
+            compressed, stats = promptveil_core.compress_batch(
                 tokens,
                 self.config.gpu_enabled,
                 self.config.batch_size,
@@ -191,8 +189,7 @@ class TokenCompressor:
         """
         try:
             # Call Rust batch decompression
-            from ._promptveil_core import decompress_batch
-            return decompress_batch(tokens, original_shape[0], original_shape[1])
+            return promptveil_core.decompress_batch(tokens, original_shape[0], original_shape[1])
             
         except Exception as e:
             raise CompressionError(f"Batch decompression failed: {str(e)}") 
