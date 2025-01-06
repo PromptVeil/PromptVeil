@@ -1,0 +1,3 @@
+[submodule "promptveil/core/compression/TokenCompression.jl"]
+	path = promptveil/core/compression/TokenCompression.jl
+	url = https://github.com/pmatheusvinhas/TokenCompression.jl.git

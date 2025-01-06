@@ -1,0 +1,24 @@
+name = "PromptVeilCore"
+uuid = "7c8ff134-be89-4d71-a851-e42a6b871181"
+authors = ["Paulo M. Vinhas"]
+version = "0.1.0"
+
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+PackageCompiler = "9b87118b-4619-50d2-8e1e-99f35a4d4d9d"
+SIMD = "fdea26ae-647d-5447-a871-4b548cad5224"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TokenCompression = "c6f261d0-14a8-4f75-8fa4-1d88e9d6eb58"
+
+[compat]
+CUDA = "5"
+PackageCompiler = "2.2.0"
+SIMD = "3"
+julia = "1.6"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
