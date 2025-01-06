@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::collections::HashSet;
 use serde::{Serialize, Deserialize};
-use crate::Result;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BlockIndex {

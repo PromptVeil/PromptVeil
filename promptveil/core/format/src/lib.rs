@@ -191,13 +191,17 @@ impl PVeilFile {
     pub fn save<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
         let file = File::create(path)?;
         let mut writer = io_utils::FileWriter::new(file);
-        writer.write_file(self)
+        let data = bincode::serialize(self)?;
+        writer.write(&data)?;
+        Ok(())
     }
 
     pub fn load<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
         let file = File::open(path)?;
         let mut reader = io_utils::FileReader::new(file);
-        reader.read_file()
+        let mut data = Vec::new();
+        reader.read(&mut data)?;
+        Ok(bincode::deserialize(&data)?)
     }
 
     pub fn add_partition(&mut self, partition: Partition) {

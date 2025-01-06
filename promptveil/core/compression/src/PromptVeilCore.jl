@@ -5,7 +5,7 @@ using TokenCompression
 
 # Export our functions
 export optimize_tokens_simd, compress_batch_gpu, decompress_batch_gpu
-export julia_optimize_tokens, julia_compress_batch, julia_decompress_batch
+export julia_optimize_tokens_config, julia_compress_batch_config, julia_decompress_batch
 
 """
     optimize_tokens_simd(tokens::Vector{UInt32})
@@ -103,11 +103,17 @@ end
 # FFI Functions for Rust Integration
 
 """
-    julia_optimize_tokens(ptr::Ptr{UInt32}, len::Int64)::Ptr{UInt32}
+    julia_optimize_tokens_config(ptr::Ptr{UInt32}, len::Int64, use_gpu::Bool, use_simd::Bool, use_patterns::Bool)::Ptr{UInt32}
 
-FFI version of optimize_tokens_simd for Rust integration.
+FFI version of optimize_tokens_simd for Rust integration with configuration options.
 """
-Base.@ccallable function julia_optimize_tokens(ptr::Ptr{UInt32}, len::Int64)::Ptr{UInt32}
+Base.@ccallable function julia_optimize_tokens_config(
+    ptr::Ptr{UInt32}, 
+    len::Int64,
+    use_gpu::Bool,
+    use_simd::Bool,
+    use_patterns::Bool
+)::Ptr{UInt32}
     tokens = unsafe_wrap(Array, ptr, len)
     result = optimize_tokens_simd(tokens)
     
@@ -117,11 +123,18 @@ Base.@ccallable function julia_optimize_tokens(ptr::Ptr{UInt32}, len::Int64)::Pt
 end
 
 """
-    julia_compress_batch(ptr::Ptr{UInt32}, rows::Int64, cols::Int64)::Ptr{UInt32}
+    julia_compress_batch_config(ptr::Ptr{UInt32}, rows::Int64, cols::Int64, use_gpu::Bool, use_simd::Bool, use_patterns::Bool)::Ptr{UInt32}
 
-FFI version of compress_batch_gpu for Rust integration.
+FFI version of compress_batch_gpu for Rust integration with configuration options.
 """
-Base.@ccallable function julia_compress_batch(ptr::Ptr{UInt32}, rows::Int64, cols::Int64)::Ptr{UInt32}
+Base.@ccallable function julia_compress_batch_config(
+    ptr::Ptr{UInt32}, 
+    rows::Int64, 
+    cols::Int64,
+    use_gpu::Bool,
+    use_simd::Bool,
+    use_patterns::Bool
+)::Ptr{UInt32}
     tokens = unsafe_wrap(Array, ptr, (rows, cols))
     result = compress_batch_gpu(tokens)
     

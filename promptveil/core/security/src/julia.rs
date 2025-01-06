@@ -7,21 +7,46 @@ static INIT: Once = Once::new();
 #[derive(Debug)]
 pub enum JuliaError {
     InitializationError(String),
-    CallError(String),
-    InvalidData(String),
+    CompressionError(String),
+    DecompressionError(String),
 }
 
 impl fmt::Display for JuliaError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             JuliaError::InitializationError(msg) => write!(f, "Julia initialization error: {}", msg),
-            JuliaError::CallError(msg) => write!(f, "Julia call error: {}", msg),
-            JuliaError::InvalidData(msg) => write!(f, "Invalid data: {}", msg),
+            JuliaError::CompressionError(msg) => write!(f, "Julia compression error: {}", msg),
+            JuliaError::DecompressionError(msg) => write!(f, "Julia decompression error: {}", msg),
         }
     }
 }
 
 impl Error for JuliaError {}
+
+extern "C" {
+    fn julia_optimize_tokens_config(
+        tokens: *const u32,
+        len: i64,
+        use_gpu: bool,
+        use_simd: bool,
+        use_patterns: bool
+    ) -> *mut u32;
+
+    fn julia_compress_batch_config(
+        tokens: *const u32,
+        rows: i64,
+        cols: i64,
+        use_gpu: bool,
+        use_simd: bool,
+        use_patterns: bool
+    ) -> *mut u32;
+
+    fn julia_decompress_batch(
+        tokens: *const u32,
+        rows: i64,
+        cols: i64
+    ) -> *mut u32;
+}
 
 pub struct JuliaInterface;
 
@@ -38,36 +63,31 @@ impl JuliaInterface {
         tokens: &[u32],
         use_gpu: bool,
         use_simd: bool,
-        pattern_learning: bool
+        use_patterns: bool
     ) -> Result<Vec<u32>, JuliaError> {
-        Self::initialize()?;
-        
-        // Call julia_optimize_tokens with configuration
         let result = unsafe {
-            let ptr = tokens.as_ptr();
-            let len = tokens.len() as i64;
-            let config = ((use_gpu as u32) << 0) |
-                        ((use_simd as u32) << 1) |
-                        ((pattern_learning as u32) << 2);
-                        
-            let result_ptr = julia_optimize_tokens_config(
-                ptr,
-                len,
-                config
-            );
-            
-            if result_ptr.is_null() {
-                return Err(JuliaError::CallError("Julia optimization failed".into()));
-            }
-            
-            Vec::from_raw_parts(
-                result_ptr as *mut u32,
-                len as usize,
-                len as usize
+            julia_optimize_tokens_config(
+                tokens.as_ptr(),
+                tokens.len() as i64,
+                use_gpu,
+                use_simd,
+                use_patterns
             )
         };
         
-        Ok(result)
+        if result.is_null() {
+            return Err(JuliaError::CompressionError("Julia optimization failed".into()));
+        }
+        
+        let optimized = unsafe {
+            Vec::from_raw_parts(
+                result,
+                tokens.len(),
+                tokens.len()
+            )
+        };
+        
+        Ok(optimized)
     }
 
     pub fn compress_batch_with_config(
@@ -76,42 +96,32 @@ impl JuliaInterface {
         cols: usize,
         use_gpu: bool,
         use_simd: bool,
-        pattern_learning: bool
+        use_patterns: bool
     ) -> Result<Vec<u32>, JuliaError> {
-        Self::initialize()?;
-        
-        if tokens.len() != rows * cols {
-            return Err(JuliaError::InvalidData(
-                format!("Token length {} does not match dimensions {}x{}", tokens.len(), rows, cols)
-            ));
-        }
-        
-        // Call julia_compress_batch with configuration
         let result = unsafe {
-            let ptr = tokens.as_ptr();
-            let config = ((use_gpu as u32) << 0) |
-                        ((use_simd as u32) << 1) |
-                        ((pattern_learning as u32) << 2);
-                        
-            let result_ptr = julia_compress_batch_config(
-                ptr,
+            julia_compress_batch_config(
+                tokens.as_ptr(),
                 rows as i64,
                 cols as i64,
-                config
-            );
-            
-            if result_ptr.is_null() {
-                return Err(JuliaError::CallError("Julia compression failed".into()));
-            }
-            
+                use_gpu,
+                use_simd,
+                use_patterns
+            )
+        };
+        
+        if result.is_null() {
+            return Err(JuliaError::CompressionError("Julia compression failed".into()));
+        }
+        
+        let compressed = unsafe {
             Vec::from_raw_parts(
-                result_ptr as *mut u32,
+                result,
                 rows * cols,
                 rows * cols
             )
         };
         
-        Ok(result)
+        Ok(compressed)
     }
 
     pub fn decompress_batch(
@@ -119,52 +129,28 @@ impl JuliaInterface {
         rows: usize,
         cols: usize
     ) -> Result<Vec<u32>, JuliaError> {
-        Self::initialize()?;
-        
-        // Call julia_decompress_batch
         let result = unsafe {
-            let ptr = tokens.as_ptr();
-            let result_ptr = julia_decompress_batch(
-                ptr,
+            julia_decompress_batch(
+                tokens.as_ptr(),
                 rows as i64,
                 cols as i64
-            );
-            
-            if result_ptr.is_null() {
-                return Err(JuliaError::CallError("Julia decompression failed".into()));
-            }
-            
+            )
+        };
+        
+        if result.is_null() {
+            return Err(JuliaError::DecompressionError("Julia decompression failed".into()));
+        }
+        
+        let decompressed = unsafe {
             Vec::from_raw_parts(
-                result_ptr as *mut u32,
+                result,
                 rows * cols,
                 rows * cols
             )
         };
         
-        Ok(result)
+        Ok(decompressed)
     }
-}
-
-// FFI declarations for Julia functions
-extern "C" {
-    fn julia_optimize_tokens_config(
-        ptr: *const u32,
-        len: i64,
-        config: u32
-    ) -> *mut u32;
-    
-    fn julia_compress_batch_config(
-        ptr: *const u32,
-        rows: i64,
-        cols: i64,
-        config: u32
-    ) -> *mut u32;
-    
-    fn julia_decompress_batch(
-        ptr: *const u32,
-        rows: i64,
-        cols: i64
-    ) -> *mut u32;
 }
 
 #[cfg(test)]
