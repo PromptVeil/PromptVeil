@@ -15,8 +15,9 @@
 <p align="center">
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.7+-blue.svg" alt="Python 3.7+"></a>
-  <a href="https://github.com/yourusername/promptveil"><img src="https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey" alt="Platform"></a>
-  <a href="docs/SECURITY.md"><img src="https://img.shields.io/badge/security-audited-green" alt="Security"></a>
+  <a href="https://github.com/PromptVeil/PromptVeil/actions"><img src="https://github.com/PromptVeil/PromptVeil/workflows/Build%20Matrix/badge.svg" alt="Build Status"></a>
+  <a href="https://pypi.org/project/promptveil/"><img src="https://img.shields.io/pypi/v/promptveil.svg" alt="PyPI version"></a>
+  <a href="https://github.com/PromptVeil/PromptVeil"><img src="https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-lightgrey" alt="Platform"></a>
   <a href="docs/ARCHITECTURE.md"><img src="https://img.shields.io/badge/docs-available-brightgreen.svg" alt="Documentation"></a>
   <a href="docs/CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
 </p>

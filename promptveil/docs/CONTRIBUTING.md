@@ -13,11 +13,54 @@ We love your input! We want to make contributing to PromptVeil as easy and trans
 We use GitHub to host code, to track issues and feature requests, as well as accept pull requests.
 
 1. Fork the repo and create your branch from `main`
-2. If you've added code that should be tested, add tests
-3. If you've changed APIs, update the documentation
-4. Ensure the test suite passes
-5. Make sure your code lints
-6. Issue that pull request!
+2. Name your branch based on the type of change:
+   - `feature/description`
+   - `fix/description`
+   - `docs/description`
+   - `release/vX.Y.Z`
+3. If you've added code that should be tested, add tests
+4. If you've changed APIs, update the documentation
+5. Ensure the test suite passes
+6. Make sure your code lints
+7. Open a Pull Request to `main`
+
+Note: Direct pushes to `main` are not allowed. All changes must go through Pull Requests with required reviews.
+
+## Branch Protection Rules
+
+The `main` branch is protected with the following rules:
+- No direct pushes allowed
+- Requires at least one approved review
+- Must pass all CI checks
+- Must be up to date with base branch
+- Linear history (no merge commits)
+
+## Release Process
+
+We use semantic versioning (MAJOR.MINOR.PATCH):
+1. MAJOR version for incompatible API changes
+2. MINOR version for new functionality in a backward compatible manner
+3. PATCH version for backward compatible bug fixes
+
+To create a new release:
+1. Create a release branch:
+   ```bash
+   git checkout -b release/vX.Y.Z
+   ```
+2. Update version in `promptveil/python/setup.py`
+3. Update CHANGELOG.md
+4. Create a Pull Request to `main`
+5. After PR is approved and merged, create and push tag:
+   ```bash
+   git checkout main
+   git pull origin main
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+6. The GitHub Actions workflow will:
+   - Run all tests across platforms
+   - Build the package
+   - Publish to PyPI (only for tagged releases)
 
 ## Code Structure
 
