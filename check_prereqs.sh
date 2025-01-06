@@ -21,11 +21,30 @@ check_julia_version() {
     return 0
 }
 
+# Function to compare version strings
+version_compare() {
+    local v1=($1)
+    local v2=($2)
+    local i
+    for ((i=0; i<${#v1[@]}; i++)); do
+        if ((10#${v1[i]} > 10#${v2[i]})); then
+            return 1
+        elif ((10#${v1[i]} < 10#${v2[i]})); then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Function to check Python version
 check_python_version() {
     local version=$(python3 --version 2>&1 | cut -d' ' -f2)
-    if [[ "$version" < "3.8.0" ]]; then
-        echo "Error: Python version must be >= 3.8.0 (found $version)"
+    local min_version="3.8.0"
+    local version_parts=(${version//./ })
+    local min_version_parts=(${min_version//./ })
+    
+    if version_compare "${version_parts[*]}" "${min_version_parts[*]}"; then
+        echo "Error: Python version must be >= $min_version (found $version)"
         return 1
     fi
     return 0
