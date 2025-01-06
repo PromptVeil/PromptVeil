@@ -18,6 +18,9 @@ catch
 end
 println("Using $(NUM_THREADS) threads for compilation")
 
+# Set threads for compilation
+ENV["JULIA_NUM_THREADS"] = string(NUM_THREADS)
+
 function generate_import_files()
     if !Sys.iswindows()
         return  # Only needed on Windows
@@ -97,8 +100,7 @@ if !isfile("PromptVeilCore.$(Sys.iswindows() ? "dll" : Sys.isapple() ? "dylib" :
         ["PromptVeilCore", "TokenCompression", "SIMD", "CUDA"],
         sysimage_path="PromptVeilCore.$(Sys.iswindows() ? "dll" : Sys.isapple() ? "dylib" : "so")",
         precompile_execution_file="test/runtests.jl",
-        cpu_target="native",
-        threads=NUM_THREADS
+        cpu_target="native"
     )
     
     # After DLL is created, generate import files on Windows
