@@ -244,29 +244,45 @@ for artifact in "PromptVeilCore.$(get_lib_extension)" "PromptVeilCore.def" "Prom
     fi
 done
 
-# Configure and build Rust components via CMake
-write_timestamped_message "Configuring CMake..." "yellow"
+# Get system resources
+NUM_CORES=$(nproc)
+TOTAL_MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+TOTAL_MEM_GB=$((TOTAL_MEM_KB / 1024 / 1024))
+
+# Calculate optimal number of jobs based on available resources
+# Use 75% of available cores and ensure we leave some memory per job
+OPTIMAL_JOBS=$((NUM_CORES * 3 / 4))
+MEM_PER_JOB=2  # GB per job
+MAX_JOBS_BY_MEM=$((TOTAL_MEM_GB / MEM_PER_JOB))
+
+# Take the minimum between CPU-based and memory-based job count
+if [ $MAX_JOBS_BY_MEM -lt $OPTIMAL_JOBS ]; then
+    NUM_JOBS=$MAX_JOBS_BY_MEM
+else
+    NUM_JOBS=$OPTIMAL_JOBS
+fi
+
+write_timestamped_message "System resources:" "yellow"
+write_timestamped_message "  - CPU cores: $NUM_CORES" "yellow"
+write_timestamped_message "  - Memory: ${TOTAL_MEM_GB}GB" "yellow"
+write_timestamped_message "Using $NUM_JOBS parallel jobs for compilation" "yellow"
+
+# Set environment variables for build optimization
+export MAKEFLAGS="-j$NUM_JOBS"
+export CARGO_BUILD_JOBS="$NUM_JOBS"
+export CMAKE_BUILD_PARALLEL_LEVEL="$NUM_JOBS"
+export JULIA_NUM_THREADS="$NUM_JOBS"
+
+# Configure CMake with parallel build
 cd build
 cmake .. \
-    -DBUILD_TESTS=ON \
-    -DUSE_GPU=OFF \
-    -DBUILD_DOCS=OFF \
-    -DCMAKE_BUILD_TYPE=Debug \
-    -DPYTHON_EXECUTABLE="$PYTHON_EXE"
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_PARALLEL_LEVEL="$NUM_JOBS" \
+    -DCMAKE_C_FLAGS="-O3 -march=native" \
+    -DCMAKE_CXX_FLAGS="-O3 -march=native"
 
-if [ $? -ne 0 ]; then
-    write_timestamped_message "Error: CMake configuration failed" "red"
-    cd "$SCRIPT_DIR"
-    exit 1
-fi
-
-write_timestamped_message "Building Rust components..." "yellow"
-cmake --build . --config Debug
-if [ $? -ne 0 ]; then
-    write_timestamped_message "Error: Rust build failed" "red"
-    cd "$SCRIPT_DIR"
-    exit 1
-fi
+# Build with all cores
+cmake --build . --parallel "$NUM_JOBS"
 
 cd "$SCRIPT_DIR"
 
@@ -309,6 +325,13 @@ get_lib_extension() {
     case "$(uname)" in
         "Darwin") echo "dylib" ;;
         "Linux") echo "so" ;;
-        *) echo "so" ;;  # Default to .so
+        "MINGW"*|"MSYS"*|"CYGWIN"*) echo "dll" ;;
+        *) 
+            if [ -f "/proc/version" ] && grep -qi microsoft "/proc/version"; then
+                echo "dll"  # WSL
+            else
+                echo "so"  # Default to .so for unknown Unix-like systems
+            fi
+            ;;
     esac
 } 
