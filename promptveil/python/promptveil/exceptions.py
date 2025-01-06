@@ -22,10 +22,10 @@ class SecurityError(PromptVeilError):
     """Raised when security operations fail."""
     pass
 
-class StorageError(PromptVeilError):
-    """Raised when storage operations fail."""
+class StoreError(PromptVeilError):
+    """Raised when conversation store operations fail."""
     pass
 
-class FormatError(StorageError):
+class FormatError(StoreError):
     """Raised when file format operations fail."""
     pass 
