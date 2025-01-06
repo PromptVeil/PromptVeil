@@ -48,65 +48,100 @@ end
 # On Windows, generate import files
 @static if Sys.iswindows()
     # Find Visual Studio installation
-    vs_paths = if Sys.iswindows()
-        [
-            joinpath(ENV["ProgramFiles"], "Microsoft Visual Studio", "2022", "Community"),
-            joinpath(ENV["ProgramFiles"], "Microsoft Visual Studio", "2019", "Community"),
-            joinpath(ENV["ProgramFiles (x86)"], "Microsoft Visual Studio", "2022", "Community"),
-            joinpath(ENV["ProgramFiles (x86)"], "Microsoft Visual Studio", "2019", "Community")
-        ]
-    else
-        String[]
-    end
-
-    vs_path = nothing
-    for path in vs_paths
-        if isdir(path)
-            vs_path = path
-            break
+    function find_vs_installation()
+        vswhere = joinpath(ENV["ProgramFiles (x86)"], "Microsoft Visual Studio", "Installer", "vswhere.exe")
+        if !isfile(vswhere)
+            error("vswhere.exe not found. Please install Visual Studio with C++ support.")
         end
+        
+        # Use vswhere to find latest VS installation
+        vs_path = read(`$vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`, String)
+        if isempty(vs_path)
+            error("Visual Studio with C++ tools not found")
+        end
+        return strip(vs_path)
     end
 
-    if vs_path === nothing
-        println("Error: Visual Studio not found")
+    function find_lib_exe(vs_path)
+        # Find latest MSVC tools version
+        vc_tools = joinpath(vs_path, "VC", "Tools", "MSVC")
+        if !isdir(vc_tools)
+            error("MSVC tools directory not found")
+        end
+        
+        versions = readdir(vc_tools)
+        if isempty(versions)
+            error("No MSVC versions found")
+        end
+        
+        latest_ver = sort(versions)[end]
+        lib_exe = joinpath(vc_tools, latest_ver, "bin", "Hostx64", "x64", "lib.exe")
+        
+        if !isfile(lib_exe)
+            error("lib.exe not found at: $lib_exe")
+        end
+        
+        return lib_exe
+    end
+
+    # List of functions to export
+    const EXPORTED_FUNCTIONS = [
+        # Core Julia functions needed by Rust
+        "jl_init",
+        "jl_eval_string",
+        "jl_call",
+        "jl_box_float64",
+        "jl_unbox_float64",
+        "jl_symbol",
+        "jl_get_global",
+        "jl_get_function",
+        # Our compression functions
+        "compress_tokens",
+        "decompress_tokens",
+        "init_compression",
+        "cleanup_compression",
+        # CUDA-related functions
+        "has_cuda_gpu",
+        "init_cuda",
+        "cleanup_cuda"
+    ]
+
+    println("Setting up Windows import library generation...")
+    
+    try
+        vs_path = find_vs_installation()
+        lib_exe = find_lib_exe(vs_path)
+        
+        # Generate .def file with all exports
+        println("Generating .def file...")
+        def_file = "PromptVeilCore.def"
+        open(def_file, "w") do f
+            println(f, "LIBRARY PromptVeilCore")
+            println(f, "EXPORTS")
+            for func in EXPORTED_FUNCTIONS
+                println(f, "    $func")
+            end
+        end
+        
+        # Generate .lib file
+        println("Generating import library...")
+        lib_cmd = `"$lib_exe" /def:$def_file /out:PromptVeilCore.lib /machine:x64`
+        println("Running: $lib_cmd")
+        run(lib_cmd)
+        
+        # Verify files were created
+        for file in ["PromptVeilCore.lib", "PromptVeilCore.exp", def_file]
+            if isfile(file)
+                println("Successfully generated: $file")
+            else
+                error("Failed to generate: $file")
+            end
+        end
+    catch e
+        println("Error during import library generation:")
+        println(e)
         exit(1)
     end
-
-    # Find lib.exe
-    lib_exe = joinpath(vs_path, "VC", "Tools", "MSVC")
-    if !isdir(lib_exe)
-        println("Error: MSVC tools directory not found")
-        exit(1)
-    end
-
-    # Get latest MSVC version
-    msvc_versions = readdir(lib_exe)
-    if isempty(msvc_versions)
-        println("Error: No MSVC versions found")
-        exit(1)
-    end
-    latest_msvc = sort(msvc_versions)[end]
-    lib_exe = joinpath(lib_exe, latest_msvc, "bin", "Hostx64", "x64", "lib.exe")
-
-    if !isfile(lib_exe)
-        println("Error: lib.exe not found at: $lib_exe")
-        exit(1)
-    end
-
-    # Generate .def file
-    println("Generating .def file...")
-    open("PromptVeilCore.def", "w") do f
-        println(f, "LIBRARY PromptVeilCore")
-        println(f, "EXPORTS")
-        println(f, "    jl_init")
-        println(f, "    jl_eval_string")
-        println(f, "    jl_call")
-        # Add other exported functions as needed
-    end
-
-    # Generate .lib file
-    println("Generating import library...")
-    run(`"$lib_exe" /def:PromptVeilCore.def /out:PromptVeilCore.lib /machine:x64`)
 end
 
 println("Build completed successfully!") 
