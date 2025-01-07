@@ -28,7 +28,7 @@ fn main() {
     
     // Link against the Julia library
     if cfg!(target_os = "windows") {
-        // Windows usa o arquivo .lib para linking
+        // Windows uses the .lib file for linking
         println!("cargo:rustc-cdylib-link-arg=/DEFAULTLIB:{}", lib_ext);
         
         // Copy the Julia library to the output directory
@@ -43,12 +43,10 @@ fn main() {
         println!("cargo:rustc-cdylib-link-arg=/DELAYLOAD:{}", lib_name);
         println!("cargo:rustc-cdylib-link-arg=/INCLUDE:__rust_julia_init");
     } else {
-        // No Linux/macOS, passamos o caminho completo da biblioteca
+        // On Linux/macOS, pass the full library path
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_dir);
-        // Removemos qualquer referência ao -l e passamos o caminho completo
-        println!("cargo:rustc-cdylib-link-arg=-Wl,--no-as-needed");
-        println!("cargo:rustc-cdylib-link-arg=-Wl,--whole-archive");
-        println!("cargo:rustc-cdylib-link-arg={}/{}", julia_dir, lib_name);
-        println!("cargo:rustc-cdylib-link-arg=-Wl,--no-whole-archive");
+        println!("cargo:rustc-cdylib-link-arg=-Wl,--push-state,-Bdynamic");
+        println!("cargo:rustc-cdylib-link-arg=-Wl,{}/{}", julia_dir, lib_name);
+        println!("cargo:rustc-cdylib-link-arg=-Wl,--pop-state");
     }
 }
