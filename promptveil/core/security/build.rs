@@ -36,7 +36,7 @@ fn main() {
     
     // Link against the Julia library
     if cfg!(target_os = "windows") {
-        // Windows usa o arquivo .lib para linking
+        // Windows uses the .lib file for linking
         println!("cargo:rustc-cdylib-link-arg=/DEFAULTLIB:{}", lib_ext);
         
         // Copy the Julia library to the output directory
@@ -51,31 +51,32 @@ fn main() {
         println!("cargo:rustc-cdylib-link-arg=/DELAYLOAD:{}", lib_name);
         println!("cargo:rustc-cdylib-link-arg=/INCLUDE:__rust_julia_init");
     } else {
-        // No Linux/macOS, criamos links simbólicos com os nomes que o linker espera
+        // On Linux/macOS, create symbolic links with the names expected by the linker
         let lib_link_name = PathBuf::from(&julia_dir).join("libPromptVeilCore.so");
         if !lib_link_name.exists() {
-            // Cria o link simbólico libPromptVeilCore.so -> PromptVeilCore.so
+            // Create symbolic link libPromptVeilCore.so -> PromptVeilCore.so
             fs::symlink(&julia_lib_path, &lib_link_name)
                 .expect("Failed to create symbolic link");
         }
 
-        // Cria link simbólico para a biblioteca Julia
+        // Create symbolic link for Julia library
         let julia_lib_name = PathBuf::from(&julia_dir).join("libjulia.so");
         let julia_lib_target = PathBuf::from(&julia_lib_dir).join("libjulia.so.1.11");
         if !julia_lib_name.exists() && julia_lib_target.exists() {
-            // Cria o link simbólico libjulia.so -> libjulia.so.1.11
+            // Create symbolic link libjulia.so -> libjulia.so.1.11
             fs::symlink(&julia_lib_target, &julia_lib_name)
                 .expect("Failed to create Julia symbolic link");
         }
         
-        // Configuração de linking
+        // Linking configuration
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_dir);
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_lib_dir.display());
         println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
         println!("cargo:rustc-link-lib=dylib=julia");
         
-        // Adiciona o diretório da Julia ao rpath do executável final
+        // Add Julia directory to the final executable's rpath
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,$ORIGIN");
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,$ORIGIN/../../..");
+        println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,/opt/julia-1.11.2/lib");
     }
 }
