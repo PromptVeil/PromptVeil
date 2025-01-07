@@ -27,7 +27,13 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", julia_dir);
     
     // Link against the Julia library
-    println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
+    if cfg!(target_os = "windows") {
+        println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
+    } else {
+        // No Linux/macOS, precisamos especificar o caminho completo já que não temos o prefixo lib
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", julia_dir);
+        println!("cargo:rustc-link-arg={}/{}", julia_dir, lib_name);
+    }
 
     // Copy the Julia library to the output directory only on Windows
     if cfg!(target_os = "windows") {
