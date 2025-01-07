@@ -5,6 +5,10 @@ use std::os::unix::fs;
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     
+    // Get the workspace directory (where the build is being run from)
+    let workspace_dir = env::current_dir()
+        .expect("Failed to get current directory");
+    
     // Get the Julia library path from environment
     let julia_dir = env::var("PROMPTVEIL_CORE_DIR")
         .expect("PROMPTVEIL_CORE_DIR must be set");
@@ -29,6 +33,7 @@ fn main() {
     println!("promptveil-core@0.1.0: Looking for PromptVeilCore in: {}", julia_dir);
     println!("promptveil-core@0.1.0: Found library at: {}", julia_lib_path.display());
     println!("promptveil-core@0.1.0: Julia lib directory: {}", julia_lib_dir.display());
+    println!("promptveil-core@0.1.0: Workspace directory: {}", workspace_dir.display());
 
     // Tell cargo to look for shared libraries in the specified directories
     println!("cargo:rustc-link-search=native={}", julia_dir);
@@ -52,8 +57,8 @@ fn main() {
         println!("cargo:rustc-cdylib-link-arg=/INCLUDE:__rust_julia_init");
     } else {
         // Try both possible locations for the library
-        let compression_lib = PathBuf::from("promptveil/core/compression").join(lib_name);
-        let build_lib = PathBuf::from("build/julia_build").join(lib_name);
+        let compression_lib = workspace_dir.join("promptveil/core/compression").join(lib_name);
+        let build_lib = workspace_dir.join("build/julia_build").join(lib_name);
         
         // Print debug information about library locations
         println!("promptveil-core@0.1.0: Trying to copy from compression dir: {}", compression_lib.display());
@@ -79,7 +84,7 @@ fn main() {
             .expect("Failed to copy Julia library to output directory");
             
         // Copy to Python package directory
-        let python_lib_dir = PathBuf::from("build/venv/lib/python3.10/site-packages/promptveil_core");
+        let python_lib_dir = workspace_dir.join("build/venv/lib/python3.10/site-packages/promptveil_core");
         if !python_lib_dir.exists() {
             std::fs::create_dir_all(&python_lib_dir)
                 .expect("Failed to create Python package directory");
