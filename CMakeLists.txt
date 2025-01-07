@@ -212,3 +212,40 @@ else()
     # Linux-specific settings
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 endif() 
+
+# Add Julia core target
+add_custom_target(julia_core ALL
+    COMMAND ${Julia_EXECUTABLE} --project=${JULIA_PROJECT_PATH} -e "include(\\\"build.jl\\\")"
+    WORKING_DIRECTORY ${JULIA_PROJECT_PATH}
+    COMMENT "Building Julia core library"
+)
+
+# Platform-specific library names
+if(WIN32)
+    set(JULIA_LIB_NAME "PromptVeilCore.dll")
+    set(JULIA_LIB_EXTRA "PromptVeilCore.lib")
+elseif(APPLE)
+    set(JULIA_LIB_NAME "libPromptVeilCore.dylib")
+else()
+    set(JULIA_LIB_NAME "libPromptVeilCore.so")
+endif()
+
+# Copy Julia library to build directory
+add_custom_command(
+    TARGET julia_core POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${JULIA_PROJECT_PATH}/${JULIA_LIB_NAME}
+        ${JULIA_BUILD_PATH}/
+    COMMENT "Copying Julia library to build directory"
+)
+
+# Copy extra files on Windows
+if(WIN32)
+    add_custom_command(
+        TARGET julia_core POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            ${JULIA_PROJECT_PATH}/${JULIA_LIB_EXTRA}
+            ${JULIA_BUILD_PATH}/
+        COMMENT "Copying Julia extra files"
+    )
+endif() 
