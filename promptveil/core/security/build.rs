@@ -12,7 +12,7 @@ fn main() {
     // Get Julia installation directory
     let julia_install_dir = env::var("JULIA_DIR")
         .expect("JULIA_DIR must be set");
-    let julia_lib_dir = PathBuf::from(&julia_install_dir).join("lib");
+    let julia_lib_dir = PathBuf::from("/opt/julia-1.11.2/lib");
     
     // Determine platform-specific library names
     let (lib_name, lib_ext) = if cfg!(target_os = "windows") {
@@ -61,9 +61,9 @@ fn main() {
 
         // Cria link simbólico para a biblioteca Julia
         let julia_lib_name = PathBuf::from(&julia_dir).join("libjulia.so");
-        let julia_lib_target = PathBuf::from(&julia_lib_dir).join("libjulia-1.11.so");
+        let julia_lib_target = PathBuf::from(&julia_lib_dir).join("libjulia.so.1.11");
         if !julia_lib_name.exists() && julia_lib_target.exists() {
-            // Cria o link simbólico libjulia.so -> libjulia-1.11.so
+            // Cria o link simbólico libjulia.so -> libjulia.so.1.11
             fs::symlink(&julia_lib_target, &julia_lib_name)
                 .expect("Failed to create Julia symbolic link");
         }
