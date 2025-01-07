@@ -406,7 +406,17 @@ export PROMPTVEIL_RUST_PATH="$SCRIPT_DIR/build"
 # Install the package in development mode
 write_timestamped_message "Installing PromptVeil package in development mode..." "yellow"
 cd "$SCRIPT_DIR/promptveil/python"
-$PYTHON_EXE -m pip install -e .
+
+# Verify Python executable is still valid
+if [ ! -f "$PYTHON_EXE" ]; then
+    write_timestamped_message "Error: Python executable not found at: $PYTHON_EXE" "red"
+    write_timestamped_message "Virtual environment may have been corrupted" "red"
+    cd "$SCRIPT_DIR"
+    exit 1
+fi
+
+# Install the package using the correct Python executable
+"$PYTHON_EXE" -m pip install -e .
 if [ $? -ne 0 ]; then
     write_timestamped_message "Error: Failed to install PromptVeil package" "red"
     cd "$SCRIPT_DIR"
