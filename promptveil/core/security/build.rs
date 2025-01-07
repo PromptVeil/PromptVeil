@@ -47,16 +47,16 @@ fn main() {
     if cfg!(target_os = "windows") {
         // Windows uses the .lib file for linking
         println!("cargo:rustc-cdylib-link-arg=/DEFAULTLIB:{}", lib_ext);
-        
+
         // Copy the Julia library to the output directory
-        let out_dir = env::var("OUT_DIR").unwrap();
+    let out_dir = env::var("OUT_DIR").unwrap();
         let target_lib = PathBuf::from(&out_dir).join(lib_name);
-        
+    
         std::fs::copy(&julia_lib_path, &target_lib)
             .expect("Failed to copy Julia library");
 
         // Windows-specific linking
-        println!("cargo:rustc-link-lib=delayimp");
+    println!("cargo:rustc-link-lib=delayimp");
         println!("cargo:rustc-cdylib-link-arg=/DELAYLOAD:{}", lib_name);
         println!("cargo:rustc-cdylib-link-arg=/INCLUDE:__rust_julia_init");
     } else {
@@ -93,9 +93,28 @@ fn main() {
             std::fs::create_dir_all(&python_lib_dir)
                 .expect("Failed to create Python package directory");
         }
+        
+        // Copy PromptVeilCore
         let python_target = python_lib_dir.join(lib_name);
         std::fs::copy(&source_lib, &python_target)
             .expect("Failed to copy Julia library to Python package directory");
+
+        // Copy Julia runtime libraries
+        let julia_libs = [
+            "libjulia.so.1.11",
+            "libjulia-internal.so.1.11"
+        ];
+
+        for julia_lib in julia_libs.iter() {
+            let source = julia_lib_dir.join(julia_lib);
+            let target = python_lib_dir.join(julia_lib);
+            
+            println!("promptveil-core@0.1.0: Copying Julia runtime library: {} -> {}", 
+                source.display(), target.display());
+                
+            std::fs::copy(&source, &target)
+                .expect(&format!("Failed to copy Julia runtime library: {}", julia_lib));
+        }
 
         // Linking configuration
         println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
@@ -103,4 +122,4 @@ fn main() {
         // Add output directory to rpath
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,$ORIGIN");
     }
-}
+} 
