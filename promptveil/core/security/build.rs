@@ -59,13 +59,18 @@ fn main() {
                 .expect("Failed to create symbolic link");
         }
 
-        // Create symbolic link for Julia library
-        let julia_lib_name = PathBuf::from(&julia_dir).join("libjulia.so");
+        // Get the output directory where our Rust library will be installed
+        let out_dir = env::var("OUT_DIR").expect("OUT_DIR must be set");
+        let out_dir = PathBuf::from(out_dir);
+        
+        // Create symbolic link for Julia library in the output directory
         let julia_lib_target = PathBuf::from(&julia_lib_dir).join("libjulia.so.1.11");
-        if !julia_lib_name.exists() && julia_lib_target.exists() {
-            // Create symbolic link libjulia.so -> libjulia.so.1.11
-            fs::symlink(&julia_lib_target, &julia_lib_name)
-                .expect("Failed to create Julia symbolic link");
+        let julia_lib_link = out_dir.join("libjulia.so.1.11");
+        
+        if !julia_lib_link.exists() && julia_lib_target.exists() {
+            println!("promptveil-core@0.1.0: Creating Julia library symlink at: {}", julia_lib_link.display());
+            fs::symlink(&julia_lib_target, &julia_lib_link)
+                .expect("Failed to create Julia symbolic link in output directory");
         }
         
         // Linking configuration
@@ -74,9 +79,8 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
         println!("cargo:rustc-link-lib=dylib=julia");
         
-        // Add Julia directory to the final executable's rpath
+        // Add current directory to rpath
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,$ORIGIN");
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,$ORIGIN/../../..");
-        println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,/opt/julia-1.11.2/lib");
     }
 }
