@@ -248,18 +248,18 @@ fi
 write_timestamped_message "Setting up Python virtual environment..." "yellow"
 VENV_PATH="$SCRIPT_DIR/build/venv"
 
-# Restore venv if backup exists and is valid
-if [ -d "venv_backup" ] && [ -f "venv_backup/pyvenv.cfg" ]; then
-    write_timestamped_message "Restoring virtual environment..." "yellow"
-    mv venv_backup "$VENV_PATH"
-else
-    write_timestamped_message "Creating new virtual environment..." "yellow"
+# Remove existing venv if it exists or if any rebuild flag is set
+if [ -d "$VENV_PATH" ] || [ "$FORCE_RUST_REBUILD" = true ] || [ "$FORCE_JULIA_REBUILD" = true ]; then
+    write_timestamped_message "Removing existing virtual environment..." "yellow"
     rm -rf "$VENV_PATH"
-    python3 -m venv "$VENV_PATH"
-    if [ $? -ne 0 ]; then
-        write_timestamped_message "Error: Failed to create virtual environment" "red"
-        exit 1
-    fi
+fi
+
+# Create new venv
+write_timestamped_message "Creating new virtual environment..." "yellow"
+python3 -m venv "$VENV_PATH"
+if [ $? -ne 0 ]; then
+    write_timestamped_message "Error: Failed to create virtual environment" "red"
+    exit 1
 fi
 
 # Verify python exists in the venv
