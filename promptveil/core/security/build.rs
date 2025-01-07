@@ -51,29 +51,42 @@ fn main() {
         println!("cargo:rustc-cdylib-link-arg=/DELAYLOAD:{}", lib_name);
         println!("cargo:rustc-cdylib-link-arg=/INCLUDE:__rust_julia_init");
     } else {
-        // On Linux/macOS, copy the library to the output directory (similar to Windows)
-        let out_dir = env::var("OUT_DIR").unwrap();
-        let target_lib = PathBuf::from(&out_dir).join(lib_name);
-        
         // Try both possible locations for the library
-        let compression_lib = PathBuf::from(&julia_dir).join(lib_name);
+        let compression_lib = PathBuf::from("promptveil/core/compression").join(lib_name);
         let build_lib = PathBuf::from("build/julia_build").join(lib_name);
         
         // Print debug information about library locations
         println!("promptveil-core@0.1.0: Trying to copy from compression dir: {}", compression_lib.display());
         println!("promptveil-core@0.1.0: Trying to copy from build dir: {}", build_lib.display());
         
-        if compression_lib.exists() {
+        // Get the source library path
+        let source_lib = if compression_lib.exists() {
             println!("promptveil-core@0.1.0: Found library in compression dir");
-            std::fs::copy(&compression_lib, &target_lib)
-                .expect("Failed to copy Julia library from compression dir");
+            compression_lib
         } else if build_lib.exists() {
             println!("promptveil-core@0.1.0: Found library in build dir");
-            std::fs::copy(&build_lib, &target_lib)
-                .expect("Failed to copy Julia library from build dir");
+            build_lib
         } else {
             panic!("Could not find PromptVeilCore library in any expected location");
+        };
+
+        // Copy to both the output directory and the Python package directory
+        let out_dir = env::var("OUT_DIR").unwrap();
+        let target_lib = PathBuf::from(&out_dir).join(lib_name);
+        
+        // Copy to output directory for linking
+        std::fs::copy(&source_lib, &target_lib)
+            .expect("Failed to copy Julia library to output directory");
+            
+        // Copy to Python package directory
+        let python_lib_dir = PathBuf::from("build/venv/lib/python3.10/site-packages/promptveil_core");
+        if !python_lib_dir.exists() {
+            std::fs::create_dir_all(&python_lib_dir)
+                .expect("Failed to create Python package directory");
         }
+        let python_target = python_lib_dir.join(lib_name);
+        std::fs::copy(&source_lib, &python_target)
+            .expect("Failed to copy Julia library to Python package directory");
 
         // Linking configuration
         println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
