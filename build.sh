@@ -190,7 +190,7 @@ if [ ! -d "$VENV_PATH" ]; then
 fi
 
 # Verify python exists in the venv
-PYTHON_EXE="$VENV_PATH/bin/python"
+PYTHON_EXE="$VENV_PATH/bin/python3"
 if [ ! -f "$PYTHON_EXE" ]; then
     write_timestamped_message "Error: Python executable not found in virtual environment at: $PYTHON_EXE" "red"
     exit 1
@@ -202,10 +202,10 @@ source "$VENV_PATH/bin/activate"
 
 # Install pip if not present
 write_timestamped_message "Checking pip installation..." "yellow"
-if ! python -c "import pip" 2>/dev/null; then
+if ! $PYTHON_EXE -c "import pip" 2>/dev/null; then
     write_timestamped_message "pip not found in virtual environment, installing..." "yellow"
     curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-    python get-pip.py
+    $PYTHON_EXE get-pip.py
     rm get-pip.py
     if [ $? -ne 0 ]; then
         write_timestamped_message "Error: Failed to install pip" "red"
@@ -215,7 +215,7 @@ fi
 
 # Install base dependencies
 write_timestamped_message "Installing base dependencies..." "yellow"
-python -m pip install --upgrade pip setuptools wheel
+$PYTHON_EXE -m pip install --upgrade pip setuptools wheel
 if [ $? -ne 0 ]; then
     write_timestamped_message "Error: Failed to install base dependencies" "red"
     exit 1
@@ -293,7 +293,7 @@ write_timestamped_message "Installing Python package..." "yellow"
 
 # Install requirements first
 write_timestamped_message "Installing requirements from: $SCRIPT_DIR/promptveil/python/requirements.txt" "yellow"
-python -m pip install -r "$SCRIPT_DIR/promptveil/python/requirements.txt"
+$PYTHON_EXE -m pip install -r "$SCRIPT_DIR/promptveil/python/requirements.txt"
 if [ $? -ne 0 ]; then
     write_timestamped_message "Error: Failed to install Python requirements" "red"
     exit 1
@@ -306,7 +306,7 @@ export PROMPTVEIL_RUST_PATH="$SCRIPT_DIR/build"
 # Install the package in development mode
 write_timestamped_message "Installing PromptVeil package in development mode..." "yellow"
 cd "$SCRIPT_DIR/promptveil/python"
-python -m pip install -e .
+$PYTHON_EXE -m pip install -e .
 if [ $? -ne 0 ]; then
     write_timestamped_message "Error: Failed to install PromptVeil package" "red"
     cd "$SCRIPT_DIR"
