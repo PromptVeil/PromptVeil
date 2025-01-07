@@ -105,38 +105,54 @@ add_custom_target(python_package ALL
 add_dependencies(python_package python_dependencies)
 add_dependencies(python_package rust_security rust_format julia_core)
 
-# Copy Rust DLL and setup Python package
+# Platform-specific Rust library extension
 if(WIN32)
-    # Copy to package source
-    add_custom_command(
-        TARGET python_package POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-            ${CARGO_TARGET_DIR}/release/promptveil_core.dll
-            ${CMAKE_SOURCE_DIR}/promptveil/python/promptveil/core/
-        COMMENT "Copying Rust DLL to Python package source"
-    )
-    
-    # Copy to site-packages and generate __init__.py
-    add_custom_command(
-        TARGET python_package POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-            ${CARGO_TARGET_DIR}/release/promptveil_core.dll
-            ${CMAKE_SOURCE_DIR}/build/venv/Lib/site-packages/promptveil_core/
-        COMMENT "Copying Rust DLL to site-packages"
-    )
-    
-    # Generate __init__.py with correct imports
-    file(WRITE ${CMAKE_SOURCE_DIR}/build/venv/Lib/site-packages/promptveil_core/__init__.py
-        "import importlib.util\n"
-        "import sys\n\n"
-        "# Get the module spec for the platform-specific extension\n"
-        "if importlib.util.find_spec(\"promptveil_core.promptveil_core\"):\n"
-        "    from .promptveil_core import *\n"
-        "    __doc__ = promptveil_core.__doc__\n"
-        "    if hasattr(promptveil_core, \"__all__\"):\n"
-        "        __all__ = promptveil_core.__all__\n"
-    )
+    set(RUST_LIB_EXT ".dll")
+    set(RUST_LIB_PREFIX "")
+elseif(APPLE)
+    set(RUST_LIB_EXT ".dylib")
+    set(RUST_LIB_PREFIX "lib")
+else()
+    set(RUST_LIB_EXT ".so")
+    set(RUST_LIB_PREFIX "lib")
 endif()
+
+# Copy Rust library and setup Python package
+add_custom_command(
+    TARGET python_package POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${CARGO_TARGET_DIR}/release/${RUST_LIB_PREFIX}promptveil_core${RUST_LIB_EXT}
+        ${CMAKE_SOURCE_DIR}/promptveil/python/promptveil/core/
+    COMMENT "Copying Rust library to Python package source"
+)
+
+# Copy to site-packages
+if(WIN32)
+    set(SITE_PACKAGES_PATH "${CMAKE_SOURCE_DIR}/build/venv/Lib/site-packages/promptveil_core")
+else()
+    set(SITE_PACKAGES_PATH "${CMAKE_SOURCE_DIR}/build/venv/lib/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages/promptveil_core")
+endif()
+
+add_custom_command(
+    TARGET python_package POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${SITE_PACKAGES_PATH}
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${CARGO_TARGET_DIR}/release/${RUST_LIB_PREFIX}promptveil_core${RUST_LIB_EXT}
+        ${SITE_PACKAGES_PATH}/
+    COMMENT "Copying Rust library to site-packages"
+)
+
+# Generate __init__.py with correct imports
+file(WRITE ${SITE_PACKAGES_PATH}/__init__.py
+    "import importlib.util\n"
+    "import sys\n\n"
+    "# Get the module spec for the platform-specific extension\n"
+    "if importlib.util.find_spec(\"promptveil_core.promptveil_core\"):\n"
+    "    from .promptveil_core import *\n"
+    "    __doc__ = promptveil_core.__doc__\n"
+    "    if hasattr(promptveil_core, \"__all__\"):\n"
+    "        __all__ = promptveil_core.__all__\n"
+)
 
 # Tests
 if(BUILD_TESTS)
@@ -215,7 +231,7 @@ endif()
 
 # Add Julia core target
 add_custom_target(julia_core ALL
-    COMMAND ${Julia_EXECUTABLE} --project=${JULIA_PROJECT_PATH} -e "include(\\\"build.jl\\\")"
+    COMMAND ${Julia_EXECUTABLE} --project=${JULIA_PROJECT_PATH} -e "include(\"build.jl\")"
     WORKING_DIRECTORY ${JULIA_PROJECT_PATH}
     COMMENT "Building Julia core library"
 )
@@ -225,17 +241,23 @@ if(WIN32)
     set(JULIA_LIB_NAME "PromptVeilCore.dll")
     set(JULIA_LIB_EXTRA "PromptVeilCore.lib")
 elseif(APPLE)
-    set(JULIA_LIB_NAME "libPromptVeilCore.dylib")
+    set(JULIA_LIB_NAME "PromptVeilCore.dylib")
 else()
-    set(JULIA_LIB_NAME "libPromptVeilCore.so")
+    set(JULIA_LIB_NAME "PromptVeilCore.so")
 endif()
+
+# Create build directory if it doesn't exist
+add_custom_command(
+    TARGET julia_core PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${JULIA_BUILD_PATH}
+)
 
 # Copy Julia library to build directory
 add_custom_command(
     TARGET julia_core POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         ${JULIA_PROJECT_PATH}/${JULIA_LIB_NAME}
-        ${JULIA_BUILD_PATH}/
+        ${JULIA_BUILD_PATH}/${JULIA_LIB_NAME}
     COMMENT "Copying Julia library to build directory"
 )
 
@@ -245,7 +267,7 @@ if(WIN32)
         TARGET julia_core POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
             ${JULIA_PROJECT_PATH}/${JULIA_LIB_EXTRA}
-            ${JULIA_BUILD_PATH}/
+            ${JULIA_BUILD_PATH}/${JULIA_LIB_EXTRA}
         COMMENT "Copying Julia extra files"
     )
 endif() 
