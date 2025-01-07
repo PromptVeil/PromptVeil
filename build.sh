@@ -207,49 +207,54 @@ fi
 # 2. Python Environment Setup Stage
 write_timestamped_message "=== Python Environment Setup Stage ===" "cyan"
 
-# Create build directory
-mkdir -p build
+# Create build directory if it doesn't exist
+if [ ! -d "build" ]; then
+    write_timestamped_message "Creating build directory..." "yellow"
+    mkdir -p build
+fi
 
 # Clean previous build but preserve venv and cargo cache
 write_timestamped_message "Cleaning previous build..." "yellow"
-if [ -d "build" ]; then
-    # Save Cargo cache if it exists and we're not forcing a rebuild
-    if [ -d "build/cargo_target" ] && [ "$FORCE_RUST_REBUILD" = false ]; then
-        write_timestamped_message "Preserving Cargo cache..." "yellow"
-        rm -rf cargo_target_backup
-        mv build/cargo_target cargo_target_backup
-    elif [ "$FORCE_RUST_REBUILD" = true ]; then
-        write_timestamped_message "Forcing Rust rebuild - clearing Cargo cache..." "yellow"
-    fi
 
-    # Save venv if it exists
-    if [ -d "build/venv" ]; then
-        write_timestamped_message "Preserving virtual environment..." "yellow"
-        rm -rf venv_backup
-        mv build/venv venv_backup
-    fi
-    
-    # Clean build directory but preserve specific folders
-    find build -mindepth 1 -maxdepth 1 ! -name venv ! -name cargo_target -exec rm -rf {} +
-    
-    # Restore Cargo cache if not forcing rebuild
-    if [ -d "cargo_target_backup" ] && [ "$FORCE_RUST_REBUILD" = false ]; then
-        write_timestamped_message "Restoring Cargo cache..." "yellow"
-        mv cargo_target_backup build/cargo_target
-    fi
+# Save Cargo cache if it exists and we're not forcing a rebuild
+if [ -d "build/cargo_target" ] && [ "$FORCE_RUST_REBUILD" = false ]; then
+    write_timestamped_message "Preserving Cargo cache..." "yellow"
+    rm -rf cargo_target_backup
+    mv build/cargo_target cargo_target_backup
+elif [ "$FORCE_RUST_REBUILD" = true ]; then
+    write_timestamped_message "Forcing Rust rebuild - clearing Cargo cache..." "yellow"
+fi
 
-    # Restore venv
-    if [ -d "venv_backup" ]; then
-        write_timestamped_message "Restoring virtual environment..." "yellow"
-        mv venv_backup build/venv
-    fi
+# Save venv if it exists and is valid
+if [ -d "build/venv" ] && [ -f "build/venv/pyvenv.cfg" ]; then
+    write_timestamped_message "Preserving virtual environment..." "yellow"
+    rm -rf venv_backup
+    mv build/venv venv_backup
+else
+    write_timestamped_message "No valid virtual environment found, will create new one..." "yellow"
+    rm -rf build/venv venv_backup
+fi
+
+# Clean build directory but preserve specific folders
+find build -mindepth 1 -maxdepth 1 ! -name venv ! -name cargo_target -exec rm -rf {} +
+
+# Restore Cargo cache if not forcing rebuild
+if [ -d "cargo_target_backup" ] && [ "$FORCE_RUST_REBUILD" = false ]; then
+    write_timestamped_message "Restoring Cargo cache..." "yellow"
+    mv cargo_target_backup build/cargo_target
 fi
 
 # Create and setup Python virtual environment
 write_timestamped_message "Setting up Python virtual environment..." "yellow"
 VENV_PATH="build/venv"
-if [ ! -d "$VENV_PATH" ]; then
+
+# Restore venv if backup exists and is valid
+if [ -d "venv_backup" ] && [ -f "venv_backup/pyvenv.cfg" ]; then
+    write_timestamped_message "Restoring virtual environment..." "yellow"
+    mv venv_backup build/venv
+else
     write_timestamped_message "Creating new virtual environment..." "yellow"
+    rm -rf "$VENV_PATH"
     python3 -m venv "$VENV_PATH"
     if [ $? -ne 0 ]; then
         write_timestamped_message "Error: Failed to create virtual environment" "red"
@@ -266,17 +271,26 @@ else
     ACTIVATE_SCRIPT="$VENV_PATH/bin/activate"
 fi
 
-if [ ! -f "$PYTHON_EXE" ]; then
-    write_timestamped_message "Error: Python executable not found in virtual environment at: $PYTHON_EXE" "red"
-    exit 1
+# Double check that venv was created correctly
+if [ ! -f "$PYTHON_EXE" ] || [ ! -f "$ACTIVATE_SCRIPT" ]; then
+    write_timestamped_message "Error: Virtual environment not created correctly" "red"
+    write_timestamped_message "Python executable: $([ -f "$PYTHON_EXE" ] && echo "Found" || echo "Missing")" "red"
+    write_timestamped_message "Activate script: $([ -f "$ACTIVATE_SCRIPT" ] && echo "Found" || echo "Missing")" "red"
+    write_timestamped_message "Attempting to create new environment..." "yellow"
+    
+    rm -rf "$VENV_PATH"
+    python3 -m venv "$VENV_PATH"
+    if [ $? -ne 0 ] || [ ! -f "$PYTHON_EXE" ] || [ ! -f "$ACTIVATE_SCRIPT" ]; then
+        write_timestamped_message "Error: Failed to create virtual environment after retry" "red"
+        exit 1
+    fi
 fi
 
 # Activate venv
 write_timestamped_message "Activating virtual environment..." "yellow"
-if [ -f "$ACTIVATE_SCRIPT" ]; then
-    source "$ACTIVATE_SCRIPT"
-else
-    write_timestamped_message "Error: Activation script not found at: $ACTIVATE_SCRIPT" "red"
+source "$ACTIVATE_SCRIPT"
+if [ $? -ne 0 ]; then
+    write_timestamped_message "Error: Failed to activate virtual environment" "red"
     exit 1
 fi
 
