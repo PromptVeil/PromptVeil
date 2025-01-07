@@ -45,8 +45,10 @@ fn main() {
     } else {
         // No Linux/macOS, passamos o caminho completo da biblioteca
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_dir);
-        println!("cargo:rustc-cdylib-link-arg=-Wl,--push-state,-Bstatic");
+        // Removemos qualquer referência ao -l e passamos o caminho completo
+        println!("cargo:rustc-cdylib-link-arg=-Wl,--no-as-needed");
+        println!("cargo:rustc-cdylib-link-arg=-Wl,--whole-archive");
         println!("cargo:rustc-cdylib-link-arg={}/{}", julia_dir, lib_name);
-        println!("cargo:rustc-cdylib-link-arg=-Wl,--pop-state");
+        println!("cargo:rustc-cdylib-link-arg=-Wl,--no-whole-archive");
     }
 }
