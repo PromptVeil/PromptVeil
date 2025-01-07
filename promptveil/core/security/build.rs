@@ -12,9 +12,9 @@ fn main() {
     let (lib_name, lib_ext) = if cfg!(target_os = "windows") {
         ("PromptVeilCore.dll", "PromptVeilCore.lib")
     } else if cfg!(target_os = "macos") {
-        ("libPromptVeilCore.dylib", "libPromptVeilCore.dylib")
+        ("PromptVeilCore.dylib", "PromptVeilCore.dylib")
     } else {
-        ("libPromptVeilCore.so", "libPromptVeilCore.so")
+        ("PromptVeilCore.so", "PromptVeilCore.so")
     };
 
     let julia_lib_path = PathBuf::from(&julia_dir).join(lib_name);
