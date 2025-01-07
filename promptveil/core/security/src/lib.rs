@@ -160,10 +160,9 @@ fn julia_compress_batch_config(
     use_simd: bool,
     use_patterns: bool
 ) -> PyResult<Vec<Vec<u32>>> {
-    // Print immediately to see if we reach this point
     eprintln!("DEBUG Rust: Function called");
     
-    // Validate input before any processing
+    // Validate input
     if tokens.is_empty() {
         eprintln!("DEBUG Rust: Empty input tokens");
         return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Empty input tokens"));
@@ -187,44 +186,62 @@ fn julia_compress_batch_config(
     
     eprintln!("DEBUG Rust: Input validation passed");
     eprintln!("DEBUG Rust: Input dimensions: {}x{}", rows, cols);
-    eprintln!("DEBUG Rust: First row length: {}", tokens.get(0).map_or(0, |row| row.len()));
-    eprintln!("DEBUG Rust: Total rows received: {}", tokens.len());
     
+    // Flatten tokens and ensure memory safety
     let flat_tokens: Vec<u32> = tokens.into_iter().flatten().collect();
     eprintln!("DEBUG Rust: Flattened array length: {}", flat_tokens.len());
-    println!("DEBUG Rust: First few values: {:?}", &flat_tokens.iter().take(10).collect::<Vec<_>>());
+    
+    // Box the data to ensure it stays alive
+    let boxed_tokens = Box::new(flat_tokens);
+    let ptr = Box::into_raw(boxed_tokens);
+    eprintln!("DEBUG Rust: Boxed data pointer: {:?}", ptr);
     
     let result = unsafe {
-        println!("DEBUG Rust: Calling Julia FFI function");
-        let ptr = flat_tokens.as_ptr();
-        println!("DEBUG Rust: Input pointer: {:?}", ptr);
-        let result_ptr = julia::julia_compress_batch_config(ptr, rows, cols, use_gpu, use_simd, use_patterns);
-        println!("DEBUG Rust: Result pointer: {:?}", result_ptr);
+        eprintln!("DEBUG Rust: Calling Julia FFI function");
+        
+        // Verify pointer is properly aligned
+        if (ptr as usize) % std::mem::align_of::<u32>() != 0 {
+            eprintln!("DEBUG Rust: Pointer alignment error");
+            Box::from_raw(ptr); // Clean up before returning
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("Memory alignment error"));
+        }
+        
+        let result_ptr = julia::julia_compress_batch_config(ptr as *const u32, rows, cols, use_gpu, use_simd, use_patterns);
+        
+        // Clean up the input data
+        Box::from_raw(ptr);
         
         if result_ptr.is_null() {
-            println!("DEBUG Rust: Julia returned null pointer");
+            eprintln!("DEBUG Rust: Julia returned null pointer");
             return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("Julia compression returned null pointer"));
         }
         
-        println!("DEBUG Rust: Converting result to Vec");
-        Vec::from_raw_parts(result_ptr as *mut u32, (rows * cols) as usize, (rows * cols) as usize)
+        eprintln!("DEBUG Rust: Creating Vec from result pointer");
+        let total_size = (rows * cols) as usize;
+        let result_vec = Vec::from_raw_parts(result_ptr as *mut u32, total_size, total_size);
+        
+        // Box the result to ensure safety during conversion
+        let boxed_result = Box::new(result_vec);
+        *boxed_result
     };
     
-    println!("DEBUG Rust: Result length: {}", result.len());
-    println!("DEBUG Rust: First few compressed values: {:?}", &result.iter().take(10).collect::<Vec<_>>());
+    eprintln!("DEBUG Rust: Result length: {}", result.len());
     
-    // Convert back to 2D array
+    // Convert back to 2D array with safety checks
     let mut result_2d = Vec::with_capacity(rows as usize);
     for i in 0..(rows as usize) {
         let start = i * (cols as usize);
         let end = start + (cols as usize);
+        
+        if end > result.len() {
+            eprintln!("DEBUG Rust: Index out of bounds during 2D conversion");
+            return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>("Index out of bounds during result conversion"));
+        }
+        
         result_2d.push(result[start..end].to_vec());
     }
     
-    println!("DEBUG Rust: Converted back to 2D array");
-    println!("DEBUG Rust: First row length: {}", result_2d.get(0).map_or(0, |row| row.len()));
-    println!("DEBUG Rust: Total rows: {}", result_2d.len());
-    
+    eprintln!("DEBUG Rust: Successfully converted to 2D array");
     Ok(result_2d)
 }
 

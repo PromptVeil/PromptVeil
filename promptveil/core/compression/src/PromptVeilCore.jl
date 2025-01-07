@@ -150,7 +150,7 @@ end
 """
     julia_compress_batch_config(ptr::Ptr{UInt32}, rows::Int64, cols::Int64, use_gpu::Bool, use_simd::Bool, use_patterns::Bool)::Ptr{UInt32}
 
-FFI version of compress_batch_gpu for Rust integration with configuration options.
+FFI version of compress_batch_gpu for Rust integration with configuration options and enhanced safety.
 """
 Base.@ccallable function julia_compress_batch_config(
     ptr::Ptr{UInt32}, 
@@ -165,24 +165,47 @@ Base.@ccallable function julia_compress_batch_config(
     println("DEBUG Julia: Configuration - GPU: $use_gpu, SIMD: $use_simd, Patterns: $use_patterns")
     
     try
+        # Verify pointer is not null
+        if ptr == C_NULL
+            println("DEBUG Julia: Received null pointer")
+            return C_NULL
+        end
+        
         println("DEBUG Julia: Converting input pointer to Array")
-        tokens = unsafe_wrap(Array, ptr, (rows, cols))
-        println("DEBUG Julia: Array dimensions: $(size(tokens))")
-        println("DEBUG Julia: First few values: $(tokens[1:min(10,end), 1])")
+        
+        # Create a copy of the data to ensure we control the memory
+        input_array = copy(unsafe_wrap(Array, ptr, (rows, cols), own=false))
+        println("DEBUG Julia: Array dimensions: $(size(input_array))")
+        println("DEBUG Julia: First few values: $(input_array[1:min(10,end), 1])")
+        
+        # Verify array dimensions
+        if size(input_array, 1) != rows || size(input_array, 2) != cols
+            println("DEBUG Julia: Array dimensions mismatch")
+            return C_NULL
+        end
         
         println("DEBUG Julia: Calling compress_batch_gpu")
-        result = compress_batch_gpu(tokens)
+        result = compress_batch_gpu(input_array)
         println("DEBUG Julia: Compression complete")
         println("DEBUG Julia: Result dimensions: $(size(result))")
-        println("DEBUG Julia: First few compressed values: $(result[1:min(10,end)])")
         
-        println("DEBUG Julia: Allocating result memory")
-        result_ptr = Base.Libc.malloc(sizeof(UInt32) * length(result))
-        println("DEBUG Julia: Result pointer: $result_ptr")
+        # Allocate new memory for the result that Rust will own
+        result_size = length(result)
+        result_ptr = Base.Libc.malloc(sizeof(UInt32) * result_size)
+        
+        if result_ptr == C_NULL
+            println("DEBUG Julia: Failed to allocate result memory")
+            return C_NULL
+        end
         
         println("DEBUG Julia: Copying result to output buffer")
-        unsafe_copyto!(Ptr{UInt32}(result_ptr), pointer(result), length(result))
+        # Create a new array that wraps the allocated memory
+        output_array = unsafe_wrap(Array, Ptr{UInt32}(result_ptr), result_size, own=false)
+        # Copy the result to the output buffer
+        copyto!(output_array, vec(result))
+        
         println("DEBUG Julia: Copy complete")
+        println("DEBUG Julia: First few compressed values: $(output_array[1:min(10,end)])")
         
         return Ptr{UInt32}(result_ptr)
     catch e
@@ -192,7 +215,7 @@ Base.@ccallable function julia_compress_batch_config(
             showerror(stdout, exc, bt)
             println()
         end
-        rethrow(e)
+        return C_NULL
     end
 end
 
