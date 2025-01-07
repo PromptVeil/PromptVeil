@@ -1,5 +1,6 @@
 use std::env;
 use std::path::PathBuf;
+use std::os::unix::fs;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
@@ -28,7 +29,7 @@ fn main() {
     
     // Link against the Julia library
     if cfg!(target_os = "windows") {
-        // Windows uses the .lib file for linking
+        // Windows usa o arquivo .lib para linking
         println!("cargo:rustc-cdylib-link-arg=/DEFAULTLIB:{}", lib_ext);
         
         // Copy the Julia library to the output directory
@@ -43,10 +44,16 @@ fn main() {
         println!("cargo:rustc-cdylib-link-arg=/DELAYLOAD:{}", lib_name);
         println!("cargo:rustc-cdylib-link-arg=/INCLUDE:__rust_julia_init");
     } else {
-        // On Linux/macOS, pass the full library path
+        // No Linux/macOS, criamos um link simbólico com o nome que o linker espera
+        let lib_link_name = PathBuf::from(&julia_dir).join("libPromptVeilCore.so");
+        if !lib_link_name.exists() {
+            // Cria o link simbólico libPromptVeilCore.so -> PromptVeilCore.so
+            fs::symlink(&julia_lib_path, &lib_link_name)
+                .expect("Failed to create symbolic link");
+        }
+        
+        // Configuração de linking
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_dir);
-        println!("cargo:rustc-cdylib-link-arg=-Wl,--push-state,-Bdynamic");
-        println!("cargo:rustc-cdylib-link-arg=-Wl,{}/{}", julia_dir, lib_name);
-        println!("cargo:rustc-cdylib-link-arg=-Wl,--pop-state");
+        println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
     }
 }
