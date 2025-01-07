@@ -6,7 +6,6 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Options
 option(BUILD_TESTS "Build tests" ON)
-option(USE_GPU "Enable GPU acceleration" ON)
 option(BUILD_DOCS "Build documentation" OFF)
 option(BUILD_EXAMPLES "Build examples" OFF)
 
@@ -31,73 +30,25 @@ set(RUST_SECURITY_PATH "${CMAKE_SOURCE_DIR}/promptveil/core/security")
 set(RUST_FORMAT_PATH "${CMAKE_SOURCE_DIR}/promptveil/core/format")
 set(RUST_BUILD_TYPE $<IF:$<CONFIG:Debug>,debug,release>)
 
-# Configure Rust build cache
+# Set Cargo target directory
 set(CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo_target")
-set(ENV{CARGO_TARGET_DIR} "${CARGO_TARGET_DIR}")
 
-# Environment variables for PyO3
-set(ENV{PYTHON_SYS_EXECUTABLE} ${Python3_EXECUTABLE})
-set(ENV{PYO3_PYTHON} ${Python3_EXECUTABLE})
+# Function to add a Rust target
+function(add_rust_target target_name cargo_toml cargo_dir build_type)
+    if(WIN32)
+        set(CARGO_CMD cargo build --manifest-path ${cargo_toml} $<IF:$<CONFIG:Debug>,,--release>)
+    else()
+        set(CARGO_CMD cargo build --manifest-path ${cargo_toml} $<IF:$<CONFIG:Debug>,,--release>)
+    endif()
 
-# Create Julia build directory
-file(MAKE_DIRECTORY ${JULIA_BUILD_PATH})
-
-# Handle platform-specific library extensions and import libraries
-if(WIN32)
-    set(JULIA_ARTIFACTS
-        "${JULIA_PROJECT_PATH}/PromptVeilCore.dll"
-        "${JULIA_PROJECT_PATH}/PromptVeilCore.lib"
-        "${JULIA_PROJECT_PATH}/PromptVeilCore.def"
-        "${JULIA_PROJECT_PATH}/PromptVeilCore.exp"
+    add_custom_target(${target_name} ALL
+        COMMAND ${CMAKE_COMMAND} -E env
+            CARGO_TARGET_DIR=${CARGO_TARGET_DIR}
+            ${CARGO_CMD}
+        WORKING_DIRECTORY ${cargo_dir}
+        COMMENT "Building Rust target ${target_name} (${build_type})"
     )
-    
-    # Copy all Julia artifacts to build directory
-    foreach(ARTIFACT ${JULIA_ARTIFACTS})
-        get_filename_component(ARTIFACT_NAME ${ARTIFACT} NAME)
-        add_custom_command(
-            OUTPUT ${JULIA_BUILD_PATH}/${ARTIFACT_NAME}
-            COMMAND ${CMAKE_COMMAND} -E copy
-                ${ARTIFACT}
-                ${JULIA_BUILD_PATH}/${ARTIFACT_NAME}
-            DEPENDS ${ARTIFACT}
-            COMMENT "Copying Julia artifact: ${ARTIFACT_NAME}"
-        )
-        list(APPEND JULIA_BUILD_OUTPUTS ${JULIA_BUILD_PATH}/${ARTIFACT_NAME})
-    endforeach()
-    
-    # Custom target for all Julia artifacts
-    add_custom_target(julia_core ALL
-        DEPENDS ${JULIA_BUILD_OUTPUTS}
-    )
-
-    # Set library paths for Rust targets
-    set(ENV{LIB} "${JULIA_BUILD_PATH};$ENV{LIB}")
-    link_directories(${JULIA_BUILD_PATH})
-else()
-    # Unix systems (Linux/macOS)
-    set(LIB_EXTENSION ${CMAKE_SHARED_LIBRARY_SUFFIX})
-    add_custom_command(
-        OUTPUT ${JULIA_BUILD_PATH}/PromptVeilCore${LIB_EXTENSION}
-        COMMAND ${CMAKE_COMMAND} -E copy
-            ${JULIA_PROJECT_PATH}/PromptVeilCore${LIB_EXTENSION}
-            ${JULIA_BUILD_PATH}/PromptVeilCore${LIB_EXTENSION}
-        DEPENDS ${JULIA_PROJECT_PATH}/PromptVeilCore${LIB_EXTENSION}
-        COMMENT "Copying Julia core module"
-    )
-    
-    add_custom_target(julia_core ALL
-        DEPENDS ${JULIA_BUILD_PATH}/PromptVeilCore${LIB_EXTENSION}
-    )
-endif()
-
-# Find PromptVeilCore library
-find_package(PromptVeilCore REQUIRED)
-
-# Set environment variables for Rust
-set(ENV{JULIA_DIR} "${JULIA_ROOT_DIR}")
-set(ENV{PROMPTVEIL_CORE_DIR} "${CMAKE_SOURCE_DIR}/promptveil/core/compression")
-set(ENV{RUST_BACKTRACE} "1")
-set(ENV{CARGO_TARGET_DIR} "${CARGO_TARGET_DIR}")
+endfunction()
 
 # Rust security module with PyO3
 add_rust_target(rust_security
@@ -135,10 +86,10 @@ set_target_properties(rust_format PROPERTIES
     ENVIRONMENT "CARGO_TARGET_DIR=${CARGO_TARGET_DIR}"
 )
 
-# Python package with development mode
-add_custom_target(python_dependencies
-    COMMAND ${Python3_EXECUTABLE} -m pip install -r requirements.txt
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/promptveil/python
+# Python dependencies target
+add_custom_target(python_dependencies ALL
+    COMMAND ${Python3_EXECUTABLE} -m pip install -r ${CMAKE_SOURCE_DIR}/promptveil/python/requirements.txt
+    COMMENT "Installing Python dependencies"
 )
 
 # Install main package (includes core)

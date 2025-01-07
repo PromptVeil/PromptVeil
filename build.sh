@@ -251,10 +251,21 @@ VENV_PATH="build/venv"
 if [ ! -d "$VENV_PATH" ]; then
     write_timestamped_message "Creating new virtual environment..." "yellow"
     python3 -m venv "$VENV_PATH"
+    if [ $? -ne 0 ]; then
+        write_timestamped_message "Error: Failed to create virtual environment" "red"
+        exit 1
+    fi
 fi
 
 # Verify python exists in the venv
-PYTHON_EXE="$VENV_PATH/bin/python3"
+if [ "$(uname)" = "MINGW"* ] || [ "$(uname)" = "MSYS"* ] || [ "$(uname)" = "CYGWIN"* ]; then
+    PYTHON_EXE="$VENV_PATH/Scripts/python.exe"
+    ACTIVATE_SCRIPT="$VENV_PATH/Scripts/activate"
+else
+    PYTHON_EXE="$VENV_PATH/bin/python3"
+    ACTIVATE_SCRIPT="$VENV_PATH/bin/activate"
+fi
+
 if [ ! -f "$PYTHON_EXE" ]; then
     write_timestamped_message "Error: Python executable not found in virtual environment at: $PYTHON_EXE" "red"
     exit 1
@@ -262,7 +273,12 @@ fi
 
 # Activate venv
 write_timestamped_message "Activating virtual environment..." "yellow"
-source "$VENV_PATH/bin/activate"
+if [ -f "$ACTIVATE_SCRIPT" ]; then
+    source "$ACTIVATE_SCRIPT"
+else
+    write_timestamped_message "Error: Activation script not found at: $ACTIVATE_SCRIPT" "red"
+    exit 1
+fi
 
 # Install pip if not present
 write_timestamped_message "Checking pip installation..." "yellow"
