@@ -29,9 +29,5 @@ python-source = "python"
 [package.metadata.cargo-post]
 dependencies = ["julia"]
 
-# Configuração de linking
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
-[target.'cfg(unix)'.build]
-rustflags = ["-C", "link-args=-Wl,-rpath,$ORIGIN"] 
+libc = "0.2" 

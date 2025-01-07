@@ -51,21 +51,28 @@ fn main() {
         println!("cargo:rustc-cdylib-link-arg=/DELAYLOAD:{}", lib_name);
         println!("cargo:rustc-cdylib-link-arg=/INCLUDE:__rust_julia_init");
     } else {
-        // No Linux/macOS, criamos um link simbólico com o nome que o linker espera
+        // No Linux/macOS, criamos links simbólicos com os nomes que o linker espera
         let lib_link_name = PathBuf::from(&julia_dir).join("libPromptVeilCore.so");
         if !lib_link_name.exists() {
             // Cria o link simbólico libPromptVeilCore.so -> PromptVeilCore.so
             fs::symlink(&julia_lib_path, &lib_link_name)
                 .expect("Failed to create symbolic link");
         }
+
+        // Cria link simbólico para a biblioteca Julia
+        let julia_lib_name = PathBuf::from(&julia_dir).join("libjulia.so");
+        let julia_lib_target = PathBuf::from(&julia_lib_dir).join("libjulia-1.11.so");
+        if !julia_lib_name.exists() && julia_lib_target.exists() {
+            // Cria o link simbólico libjulia.so -> libjulia-1.11.so
+            fs::symlink(&julia_lib_target, &julia_lib_name)
+                .expect("Failed to create Julia symbolic link");
+        }
         
         // Configuração de linking
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_dir);
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_lib_dir.display());
         println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
-        
-        // Link com a versão específica da biblioteca Julia
-        println!("cargo:rustc-link-lib=dylib=julia-1.11");
+        println!("cargo:rustc-link-lib=dylib=julia");
         
         // Adiciona o diretório da Julia ao rpath do executável final
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,$ORIGIN");
