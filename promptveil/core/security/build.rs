@@ -63,6 +63,12 @@ fn main() {
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_dir);
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_lib_dir.display());
         println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
-        println!("cargo:rustc-link-lib=dylib=julia");
+        
+        // Link com a versão específica da biblioteca Julia
+        println!("cargo:rustc-link-lib=dylib=julia-1.11");
+        
+        // Adiciona o diretório da Julia ao rpath do executável final
+        println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,$ORIGIN");
+        println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,$ORIGIN/../../..");
     }
 }
