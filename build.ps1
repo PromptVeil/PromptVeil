@@ -183,10 +183,12 @@ if (Test-Path $buildDir) {
 Write-TimestampedMessage "Setting up Python virtual environment..." -Color Yellow
 $venvPath = Join-Path $buildDir "venv"
 
-# Remove existing venv if it exists
-if (Test-Path $venvPath) {
+# Remove existing venv if it exists or if any rebuild flag is set
+if ((Test-Path $venvPath) -or $ForceRustRebuild -or $ForceJuliaRebuild) {
     Write-TimestampedMessage "Removing existing virtual environment..." -Color Yellow
-    Remove-Item -Recurse -Force $venvPath
+    if (Test-Path $venvPath) {
+        Remove-Item -Recurse -Force $venvPath
+    }
 }
 
 # Create new venv
