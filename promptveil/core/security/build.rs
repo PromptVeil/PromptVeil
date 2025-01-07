@@ -5,9 +5,12 @@ use std::os::unix::fs;
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     
-    // Get the workspace directory (where the build is being run from)
-    let workspace_dir = env::current_dir()
+    // Get the workspace directory (root of the project)
+    let current_dir = env::current_dir()
         .expect("Failed to get current directory");
+    let workspace_dir = current_dir.ancestors()
+        .find(|p| p.join("promptveil").join("core").exists())
+        .expect("Failed to find workspace root directory");
     
     // Get the Julia library path from environment
     let julia_dir = env::var("PROMPTVEIL_CORE_DIR")
@@ -33,6 +36,7 @@ fn main() {
     println!("promptveil-core@0.1.0: Looking for PromptVeilCore in: {}", julia_dir);
     println!("promptveil-core@0.1.0: Found library at: {}", julia_lib_path.display());
     println!("promptveil-core@0.1.0: Julia lib directory: {}", julia_lib_dir.display());
+    println!("promptveil-core@0.1.0: Current directory: {}", current_dir.display());
     println!("promptveil-core@0.1.0: Workspace directory: {}", workspace_dir.display());
 
     // Tell cargo to look for shared libraries in the specified directories
