@@ -9,6 +9,11 @@ fn main() {
     let julia_dir = env::var("PROMPTVEIL_CORE_DIR")
         .expect("PROMPTVEIL_CORE_DIR must be set");
     
+    // Get Julia installation directory
+    let julia_install_dir = env::var("JULIA_DIR")
+        .expect("JULIA_DIR must be set");
+    let julia_lib_dir = PathBuf::from(&julia_install_dir).join("lib");
+    
     // Determine platform-specific library names
     let (lib_name, lib_ext) = if cfg!(target_os = "windows") {
         ("PromptVeilCore.dll", "PromptVeilCore.lib")
@@ -23,9 +28,11 @@ fn main() {
     // Print debug information
     println!("promptveil-core@0.1.0: Looking for PromptVeilCore in: {}", julia_dir);
     println!("promptveil-core@0.1.0: Found library at: {}", julia_lib_path.display());
+    println!("promptveil-core@0.1.0: Julia lib directory: {}", julia_lib_dir.display());
 
-    // Tell cargo to look for shared libraries in the specified directory
+    // Tell cargo to look for shared libraries in the specified directories
     println!("cargo:rustc-link-search=native={}", julia_dir);
+    println!("cargo:rustc-link-search=native={}", julia_lib_dir.display());
     
     // Link against the Julia library
     if cfg!(target_os = "windows") {
@@ -54,6 +61,8 @@ fn main() {
         
         // Configuração de linking
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_dir);
+        println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_lib_dir.display());
         println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
+        println!("cargo:rustc-link-lib=dylib=julia");
     }
 }
