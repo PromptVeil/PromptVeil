@@ -407,6 +407,7 @@ fi
 # Set environment variables for the package installation
 export PROMPTVEIL_JULIA_PATH="$SCRIPT_DIR/build/julia_build"
 export PROMPTVEIL_RUST_PATH="$SCRIPT_DIR/build"
+export LD_LIBRARY_PATH="/opt/julia-1.11.2/lib:$LD_LIBRARY_PATH"
 
 # Install the package in development mode
 write_timestamped_message "Installing PromptVeil package in development mode..." "yellow"

@@ -114,6 +114,7 @@ install_julia() {
         # Download and extract Julia
         JULIA_VERSION="1.11.2"
         JULIA_MAJOR="1.11"
+        JULIA_INSTALL_DIR="/opt/julia-${JULIA_VERSION}"
         
         # Determine system architecture
         ARCH=$(uname -m)
@@ -132,12 +133,64 @@ install_julia() {
         
         JULIA_URL="https://julialang-s3.julialang.org/bin/linux/${ARCH}/${JULIA_MAJOR}/julia-${JULIA_VERSION}-linux-${JULIA_ARCH}.tar.gz"
         
+        write_timestamped_message "Downloading Julia from: $JULIA_URL" "yellow"
         wget -O julia.tar.gz "$JULIA_URL"
+        
+        write_timestamped_message "Extracting Julia to /opt..." "yellow"
         sudo tar xzf julia.tar.gz -C /opt/
-        sudo ln -sf "/opt/julia-${JULIA_VERSION}/bin/julia" /usr/local/bin/julia
+        
+        # Verify installation directory
+        if [ ! -d "$JULIA_INSTALL_DIR" ]; then
+            write_timestamped_message "Error: Julia installation directory not found at $JULIA_INSTALL_DIR" "red"
+            exit 1
+        fi
+        
+        # Set correct permissions
+        write_timestamped_message "Setting permissions for Julia installation..." "yellow"
+        sudo chmod -R 755 "$JULIA_INSTALL_DIR"
+        sudo chown -R root:root "$JULIA_INSTALL_DIR"
+        
+        # Create symbolic link
+        write_timestamped_message "Creating symbolic link for Julia..." "yellow"
+        sudo ln -sf "$JULIA_INSTALL_DIR/bin/julia" /usr/local/bin/julia
+        
+        # Verify lib directory
+        if [ ! -d "$JULIA_INSTALL_DIR/lib" ]; then
+            write_timestamped_message "Error: Julia lib directory not found at $JULIA_INSTALL_DIR/lib" "red"
+            exit 1
+        fi
+        
+        # Add Julia lib path to ld.so.conf.d
+        write_timestamped_message "Configuring Julia library path..." "yellow"
+        echo "$JULIA_INSTALL_DIR/lib" | sudo tee /etc/ld.so.conf.d/julia.conf
+        sudo ldconfig
+        
+        # Clean up
         rm julia.tar.gz
+        
+        write_timestamped_message "Julia installation completed successfully!" "green"
+        write_timestamped_message "Julia binary: $(which julia)" "green"
+        write_timestamped_message "Julia version: $(julia --version)" "green"
+        write_timestamped_message "Julia lib path: $JULIA_INSTALL_DIR/lib" "green"
     else
         write_timestamped_message "Julia is already installed" "green"
+        # Verify existing installation
+        JULIA_VERSION="1.11.2"
+        JULIA_INSTALL_DIR="/opt/julia-${JULIA_VERSION}"
+        
+        if [ ! -d "$JULIA_INSTALL_DIR/lib" ]; then
+            write_timestamped_message "Warning: Julia lib directory not found at expected location" "red"
+            write_timestamped_message "Attempting to fix installation..." "yellow"
+            install_julia
+        else
+            write_timestamped_message "Julia installation verified at: $JULIA_INSTALL_DIR" "green"
+            # Ensure library path is configured
+            if [ ! -f "/etc/ld.so.conf.d/julia.conf" ]; then
+                write_timestamped_message "Configuring Julia library path..." "yellow"
+                echo "$JULIA_INSTALL_DIR/lib" | sudo tee /etc/ld.so.conf.d/julia.conf
+                sudo ldconfig
+            fi
+        fi
     fi
 }
 
