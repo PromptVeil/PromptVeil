@@ -51,9 +51,34 @@ start_time=$(date +%s)
 # Check prerequisites
 write_timestamped_message "Checking prerequisites..." "cyan"
 ./check_prereqs.sh
-if [ $? -ne 0 ]; then
-    write_timestamped_message "Error: Some prerequisites are missing." "red"
-    exit 1
+PREREQS_STATUS=$?
+
+# If prerequisites check failed, try to install missing dependencies
+if [ $PREREQS_STATUS -ne 0 ]; then
+    if [ "$(uname)" = "Linux" ]; then
+        write_timestamped_message "Some prerequisites are missing. Attempting to install..." "yellow"
+        if [ -f "install_deps.sh" ]; then
+            chmod +x install_deps.sh
+            ./install_deps.sh
+            if [ $? -ne 0 ]; then
+                write_timestamped_message "Error: Failed to install dependencies" "red"
+                exit 1
+            fi
+            # Check prerequisites again after installation
+            ./check_prereqs.sh
+            if [ $? -ne 0 ]; then
+                write_timestamped_message "Error: Some prerequisites are still missing after installation" "red"
+                exit 1
+            fi
+        else
+            write_timestamped_message "Error: install_deps.sh not found" "red"
+            exit 1
+        fi
+    else
+        write_timestamped_message "Error: Automatic dependency installation is only supported on Linux" "red"
+        write_timestamped_message "Please install missing dependencies manually" "red"
+        exit 1
+    fi
 fi
 
 write_timestamped_message "Starting PromptVeil build..." "cyan"
