@@ -135,25 +135,47 @@ JULIA_LIB_PATH="promptveil/core/compression/PromptVeilCore"
 JULIA_CACHE_PATH="build/julia_cache"
 NEED_JULIA_BUILD=true
 
-if [ -d "$JULIA_CACHE_PATH" ] && [ "$FORCE_JULIA_REBUILD" = false ]; then
-    # Calculate current hash
-    CURRENT_HASH=$(find promptveil/core/compression/TokenCompression.jl/src -type f -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1)
+# Get the correct library extension for this OS
+LIB_EXT=$(get_lib_extension)
+
+# First check if the library exists
+if [ -f "${JULIA_LIB_PATH}.${LIB_EXT}" ] && [ "$FORCE_JULIA_REBUILD" = false ]; then
+    write_timestamped_message "Found existing Julia library, checking if rebuild needed..." "yellow"
     
-    if [ -f "$JULIA_CACHE_PATH/hash.txt" ]; then
-        CACHED_HASH=$(cat "$JULIA_CACHE_PATH/hash.txt")
-        if [ "$CACHED_HASH" = "$CURRENT_HASH" ]; then
-            write_timestamped_message "Julia build is up to date, skipping..." "green"
-            NEED_JULIA_BUILD=false
-            
-            # Ensure library is in place with correct extension
-            LIB_EXT=$(get_lib_extension)
-            if [ ! -f "${JULIA_LIB_PATH}.${LIB_EXT}" ]; then
-                write_timestamped_message "Restoring library from cache..." "yellow"
-                cp "$JULIA_CACHE_PATH/PromptVeilCore.${LIB_EXT}" "${JULIA_LIB_PATH}.${LIB_EXT}"
+    # Only check source changes if library exists
+    if [ -d "$JULIA_CACHE_PATH" ]; then
+        # Calculate current hash of TokenCompression.jl
+        CURRENT_HASH=$(find promptveil/core/compression/TokenCompression.jl/src -type f -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1)
+        
+        if [ -f "$JULIA_CACHE_PATH/hash.txt" ]; then
+            CACHED_HASH=$(cat "$JULIA_CACHE_PATH/hash.txt")
+            if [ "$CACHED_HASH" = "$CURRENT_HASH" ]; then
+                write_timestamped_message "Julia build is up to date, skipping..." "green"
+                NEED_JULIA_BUILD=false
+            else
+                write_timestamped_message "Source files changed, rebuilding Julia module..." "yellow"
             fi
         else
-            write_timestamped_message "Source files changed, rebuilding Julia module..." "yellow"
+            write_timestamped_message "No hash file found, but library exists. Using existing library..." "yellow"
+            NEED_JULIA_BUILD=false
+            # Cache the current state
+            mkdir -p "$JULIA_CACHE_PATH"
+            echo "$CURRENT_HASH" > "$JULIA_CACHE_PATH/hash.txt"
+            cp "${JULIA_LIB_PATH}.${LIB_EXT}" "$JULIA_CACHE_PATH/"
         fi
+    else
+        write_timestamped_message "No cache directory, but library exists. Using existing library..." "yellow"
+        NEED_JULIA_BUILD=false
+        # Create cache with current state
+        mkdir -p "$JULIA_CACHE_PATH"
+        find promptveil/core/compression/TokenCompression.jl/src -type f -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1 > "$JULIA_CACHE_PATH/hash.txt"
+        cp "${JULIA_LIB_PATH}.${LIB_EXT}" "$JULIA_CACHE_PATH/"
+    fi
+else
+    if [ "$FORCE_JULIA_REBUILD" = true ]; then
+        write_timestamped_message "Forced rebuild of Julia module..." "yellow"
+    else
+        write_timestamped_message "Julia library not found, building..." "yellow"
     fi
 fi
 
@@ -176,10 +198,9 @@ if [ "$NEED_JULIA_BUILD" = true ]; then
     fi
     cd "$SCRIPT_DIR"
     
-    # Cache the new build with correct extension
+    # Cache the new build
     mkdir -p "$JULIA_CACHE_PATH"
     find promptveil/core/compression/TokenCompression.jl/src -type f -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1 > "$JULIA_CACHE_PATH/hash.txt"
-    LIB_EXT=$(get_lib_extension)
     cp "${JULIA_LIB_PATH}.${LIB_EXT}" "$JULIA_CACHE_PATH/"
 fi
 
