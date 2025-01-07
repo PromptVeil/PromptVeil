@@ -246,12 +246,12 @@ fi
 
 # Create and setup Python virtual environment
 write_timestamped_message "Setting up Python virtual environment..." "yellow"
-VENV_PATH="build/venv"
+VENV_PATH="$SCRIPT_DIR/build/venv"
 
 # Restore venv if backup exists and is valid
 if [ -d "venv_backup" ] && [ -f "venv_backup/pyvenv.cfg" ]; then
     write_timestamped_message "Restoring virtual environment..." "yellow"
-    mv venv_backup build/venv
+    mv venv_backup "$VENV_PATH"
 else
     write_timestamped_message "Creating new virtual environment..." "yellow"
     rm -rf "$VENV_PATH"
@@ -270,6 +270,8 @@ else
     PYTHON_EXE="$VENV_PATH/bin/python3"
     ACTIVATE_SCRIPT="$VENV_PATH/bin/activate"
 fi
+
+write_timestamped_message "Using Python at: $PYTHON_EXE" "yellow"
 
 # Double check that venv was created correctly
 if [ ! -f "$PYTHON_EXE" ] || [ ! -f "$ACTIVATE_SCRIPT" ]; then
@@ -294,12 +296,15 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Export the Python path for other parts of the script
+export VENV_PYTHON="$PYTHON_EXE"
+
 # Install pip if not present
 write_timestamped_message "Checking pip installation..." "yellow"
-if ! $PYTHON_EXE -c "import pip" 2>/dev/null; then
+if ! "$VENV_PYTHON" -c "import pip" 2>/dev/null; then
     write_timestamped_message "pip not found in virtual environment, installing..." "yellow"
     curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-    $PYTHON_EXE get-pip.py
+    "$VENV_PYTHON" get-pip.py
     rm get-pip.py
     if [ $? -ne 0 ]; then
         write_timestamped_message "Error: Failed to install pip" "red"
@@ -309,7 +314,7 @@ fi
 
 # Install base dependencies
 write_timestamped_message "Installing base dependencies..." "yellow"
-$PYTHON_EXE -m pip install --upgrade pip setuptools wheel
+"$VENV_PYTHON" -m pip install --upgrade pip setuptools wheel
 if [ $? -ne 0 ]; then
     write_timestamped_message "Error: Failed to install base dependencies" "red"
     exit 1
