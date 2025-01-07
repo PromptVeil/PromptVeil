@@ -55,8 +55,25 @@ fn main() {
         let out_dir = env::var("OUT_DIR").unwrap();
         let target_lib = PathBuf::from(&out_dir).join(lib_name);
         
-        std::fs::copy(&julia_lib_path, &target_lib)
-            .expect("Failed to copy Julia library");
+        // Try both possible locations for the library
+        let compression_lib = PathBuf::from(&julia_dir).join(lib_name);
+        let build_lib = PathBuf::from("build/julia_build").join(lib_name);
+        
+        // Print debug information about library locations
+        println!("promptveil-core@0.1.0: Trying to copy from compression dir: {}", compression_lib.display());
+        println!("promptveil-core@0.1.0: Trying to copy from build dir: {}", build_lib.display());
+        
+        if compression_lib.exists() {
+            println!("promptveil-core@0.1.0: Found library in compression dir");
+            std::fs::copy(&compression_lib, &target_lib)
+                .expect("Failed to copy Julia library from compression dir");
+        } else if build_lib.exists() {
+            println!("promptveil-core@0.1.0: Found library in build dir");
+            std::fs::copy(&build_lib, &target_lib)
+                .expect("Failed to copy Julia library from build dir");
+        } else {
+            panic!("Could not find PromptVeilCore library in any expected location");
+        }
 
         // Linking configuration
         println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
