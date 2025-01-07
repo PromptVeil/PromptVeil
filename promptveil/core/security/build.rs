@@ -101,8 +101,9 @@ fn main() {
 
         // Copy Julia runtime libraries
         let julia_libs = [
+            "libjulia.so",
             "libjulia.so.1.11",
-            "libjulia-internal.so.1.11"
+            "libjulia.so.1.11.2"
         ];
 
         for julia_lib in julia_libs.iter() {
@@ -112,8 +113,15 @@ fn main() {
             println!("promptveil-core@0.1.0: Copying Julia runtime library: {} -> {}", 
                 source.display(), target.display());
                 
-            std::fs::copy(&source, &target)
-                .expect(&format!("Failed to copy Julia runtime library: {}", julia_lib));
+            if source.is_symlink() {
+                let link_target = fs::read_link(&source)
+                    .expect(&format!("Failed to read symlink: {}", julia_lib));
+                std::os::unix::fs::symlink(link_target, &target)
+                    .expect(&format!("Failed to create symlink: {}", julia_lib));
+            } else {
+                std::fs::copy(&source, &target)
+                    .expect(&format!("Failed to copy Julia runtime library: {}", julia_lib));
+            }
         }
 
         // Linking configuration
