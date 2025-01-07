@@ -114,6 +114,22 @@ if [ "$FORCE_JULIA_REBUILD" = true ]; then
     done
 fi
 
+# Helper function to get library extension based on OS
+get_lib_extension() {
+    case "$(uname)" in
+        "Darwin") echo "dylib" ;;
+        "Linux") echo "so" ;;
+        "MINGW"*|"MSYS"*|"CYGWIN"*) echo "dll" ;;
+        *) 
+            if [ -f "/proc/version" ] && grep -qi microsoft "/proc/version"; then
+                echo "dll"  # WSL
+            else
+                echo "so"  # Default to .so for unknown Unix-like systems
+            fi
+            ;;
+    esac
+}
+
 # Check if we need to rebuild Julia module
 JULIA_LIB_PATH="promptveil/core/compression/PromptVeilCore"
 JULIA_CACHE_PATH="build/julia_cache"
@@ -129,10 +145,11 @@ if [ -d "$JULIA_CACHE_PATH" ] && [ "$FORCE_JULIA_REBUILD" = false ]; then
             write_timestamped_message "Julia build is up to date, skipping..." "green"
             NEED_JULIA_BUILD=false
             
-            # Ensure library is in place
-            if [ ! -f "${JULIA_LIB_PATH}.$(get_lib_extension)" ]; then
+            # Ensure library is in place with correct extension
+            LIB_EXT=$(get_lib_extension)
+            if [ ! -f "${JULIA_LIB_PATH}.${LIB_EXT}" ]; then
                 write_timestamped_message "Restoring library from cache..." "yellow"
-                cp "$JULIA_CACHE_PATH/PromptVeilCore.$(get_lib_extension)" "${JULIA_LIB_PATH}.$(get_lib_extension)"
+                cp "$JULIA_CACHE_PATH/PromptVeilCore.${LIB_EXT}" "${JULIA_LIB_PATH}.${LIB_EXT}"
             fi
         else
             write_timestamped_message "Source files changed, rebuilding Julia module..." "yellow"
@@ -159,10 +176,11 @@ if [ "$NEED_JULIA_BUILD" = true ]; then
     fi
     cd "$SCRIPT_DIR"
     
-    # Cache the new build
+    # Cache the new build with correct extension
     mkdir -p "$JULIA_CACHE_PATH"
     find promptveil/core/compression/TokenCompression.jl/src -type f -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1 > "$JULIA_CACHE_PATH/hash.txt"
-    cp "${JULIA_LIB_PATH}.$(get_lib_extension)" "$JULIA_CACHE_PATH/"
+    LIB_EXT=$(get_lib_extension)
+    cp "${JULIA_LIB_PATH}.${LIB_EXT}" "$JULIA_CACHE_PATH/"
 fi
 
 # 2. Python Environment Setup Stage
@@ -259,8 +277,14 @@ write_timestamped_message "Setting PYO3_ENVIRONMENT_SIGNATURE to: $PYO3_ENVIRONM
 JULIA_BUILD_DIR="build/julia_build"
 mkdir -p "$JULIA_BUILD_DIR"
 
-# Copy all Julia artifacts
-for artifact in "PromptVeilCore.$(get_lib_extension)" "PromptVeilCore.def" "PromptVeilCore.exp" "PromptVeilCore.lib"; do
+# Copy all Julia artifacts with correct extension
+LIB_EXT=$(get_lib_extension)
+ARTIFACTS=("PromptVeilCore.${LIB_EXT}")
+if [ "$(uname)" = "MINGW"* ] || [ "$(uname)" = "MSYS"* ] || [ "$(uname)" = "CYGWIN"* ] || ([ -f "/proc/version" ] && grep -qi microsoft "/proc/version"); then
+    ARTIFACTS+=("PromptVeilCore.def" "PromptVeilCore.exp" "PromptVeilCore.lib")
+fi
+
+for artifact in "${ARTIFACTS[@]}"; do
     if [ -f "$PROMPTVEIL_CORE_DIR/$artifact" ]; then
         write_timestamped_message "Copying Julia artifact: $artifact" "yellow"
         cp "$PROMPTVEIL_CORE_DIR/$artifact" "$JULIA_BUILD_DIR/"
@@ -343,20 +367,4 @@ cd "$SCRIPT_DIR"
 end_time=$(date +%s)
 duration=$((end_time - start_time))
 write_timestamped_message "Build completed successfully in $(date -u -d @${duration} '+%H:%M:%S')!" "green"
-write_timestamped_message "You can now use the PromptVeil package from Python." "green"
-
-# Helper function to get library extension based on OS
-get_lib_extension() {
-    case "$(uname)" in
-        "Darwin") echo "dylib" ;;
-        "Linux") echo "so" ;;
-        "MINGW"*|"MSYS"*|"CYGWIN"*) echo "dll" ;;
-        *) 
-            if [ -f "/proc/version" ] && grep -qi microsoft "/proc/version"; then
-                echo "dll"  # WSL
-            else
-                echo "so"  # Default to .so for unknown Unix-like systems
-            fi
-            ;;
-    esac
-} 
+write_timestamped_message "You can now use the PromptVeil package from Python." "green" 
