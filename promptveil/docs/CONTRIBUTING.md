@@ -74,6 +74,39 @@ promptveil/
 └── docs/            # Documentation
 ```
 
+## Library Architecture and Linking
+
+The project uses a multi-layer architecture with Julia, Rust, and Python:
+
+1. **Julia Core Library (~468MB)**
+   - Implements the core token compression algorithms
+   - Compiled to a shared library (`PromptVeilCore.dll`/`.so`/`.dylib`)
+   - The large size is due to embedded ML models and Julia runtime
+
+2. **Platform-Specific Linking**
+   
+   Windows:
+   - Uses `.lib` file for compile-time linking
+   - Uses `DELAYLOAD` for runtime DLL loading
+   - Copies DLL to output directory
+   - No symbolic links needed
+
+   Linux:
+   - Uses `.so` for linking
+   - Copies `.so` to output directory
+   - Uses `rpath` with `$ORIGIN` for library lookup
+   - No symbolic links needed
+
+   macOS:
+   - Uses `.dylib` for linking (similar to Linux)
+   - Implementation details pending verification
+
+3. **Build Process**
+   - Julia compiles `PromptVeilCore` shared library
+   - Rust security layer links against this library
+   - Python bindings link against the Rust library
+   - Build system ensures correct library placement and linking
+
 ## Development Setup
 
 1. **Clone your fork**
