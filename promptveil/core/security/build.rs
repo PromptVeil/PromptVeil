@@ -108,10 +108,6 @@ fn main() {
             "libjulia.so.1.11.2"
         ];
 
-        let julia_internal_libs = [
-            "libjulia-internal.so.1.11"
-        ];
-
         // Copy main Julia libraries
         for julia_lib in julia_libs.iter() {
             let source = julia_lib_dir.join(julia_lib);
@@ -144,22 +140,37 @@ fn main() {
             }
         }
 
-        // Copy internal Julia libraries
-        for julia_lib in julia_internal_libs.iter() {
-            let source = julia_internal_lib_dir.join(julia_lib);
-            let target = python_lib_dir.join(julia_lib);
+        // Copy Julia auxiliary libraries directory
+        let julia_aux_dir = julia_lib_dir.join("julia");
+        let target_julia_dir = python_lib_dir.join("julia");
+        
+        println!("promptveil-core@0.1.0: Copying Julia auxiliary libraries from: {} -> {}", 
+            julia_aux_dir.display(), target_julia_dir.display());
             
-            println!("promptveil-core@0.1.0: Copying Julia internal library: {} -> {}", 
-                source.display(), target.display());
-                
-            // Remove existing file if it exists
-            if target.exists() {
-                std::fs::remove_file(&target)
-                    .expect(&format!("Failed to remove existing file: {}", julia_lib));
+        // Remove existing directory if it exists
+        if target_julia_dir.exists() {
+            std::fs::remove_dir_all(&target_julia_dir)
+                .expect("Failed to remove existing Julia auxiliary directory");
+        }
+        
+        // Create target directory
+        std::fs::create_dir_all(&target_julia_dir)
+            .expect("Failed to create Julia auxiliary directory");
+            
+        // Copy all files from julia directory
+        for entry in std::fs::read_dir(&julia_aux_dir)
+            .expect("Failed to read Julia auxiliary directory") {
+            let entry = entry.expect("Failed to read directory entry");
+            let source = entry.path();
+            let target = target_julia_dir.join(entry.file_name());
+            
+            if source.is_file() {
+                println!("promptveil-core@0.1.0: Copying Julia auxiliary library: {} -> {}", 
+                    source.display(), target.display());
+                    
+                std::fs::copy(&source, &target)
+                    .expect(&format!("Failed to copy Julia auxiliary library: {}", source.display()));
             }
-            
-            std::fs::copy(&source, &target)
-                .expect(&format!("Failed to copy Julia internal library: {}", julia_lib));
         }
 
         // Linking configuration
