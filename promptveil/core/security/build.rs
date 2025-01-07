@@ -21,6 +21,7 @@ fn main() {
     let julia_install_dir = env::var("JULIA_DIR")
         .expect("JULIA_DIR must be set");
     let julia_lib_dir = PathBuf::from("/opt/julia-1.11.2/lib");
+    let julia_internal_lib_dir = PathBuf::from("/opt/julia-1.11.2/lib/julia");
     
     // Determine platform-specific library names
     let (lib_name, lib_ext) = if cfg!(target_os = "windows") {
@@ -107,6 +108,11 @@ fn main() {
             "libjulia.so.1.11.2"
         ];
 
+        let julia_internal_libs = [
+            "libjulia-internal.so.1.11"
+        ];
+
+        // Copy main Julia libraries
         for julia_lib in julia_libs.iter() {
             let source = julia_lib_dir.join(julia_lib);
             let target = python_lib_dir.join(julia_lib);
@@ -136,6 +142,24 @@ fn main() {
                 std::fs::copy(&source, &target)
                     .expect(&format!("Failed to copy Julia runtime library: {}", julia_lib));
             }
+        }
+
+        // Copy internal Julia libraries
+        for julia_lib in julia_internal_libs.iter() {
+            let source = julia_internal_lib_dir.join(julia_lib);
+            let target = python_lib_dir.join(julia_lib);
+            
+            println!("promptveil-core@0.1.0: Copying Julia internal library: {} -> {}", 
+                source.display(), target.display());
+                
+            // Remove existing file if it exists
+            if target.exists() {
+                std::fs::remove_file(&target)
+                    .expect(&format!("Failed to remove existing file: {}", julia_lib));
+            }
+            
+            std::fs::copy(&source, &target)
+                .expect(&format!("Failed to copy Julia internal library: {}", julia_lib));
         }
 
         // Linking configuration
