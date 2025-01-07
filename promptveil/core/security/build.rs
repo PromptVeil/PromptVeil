@@ -29,20 +29,11 @@ fn main() {
     // Link against the Julia library
     if cfg!(target_os = "windows") {
         println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
-    } else {
-        // On Linux/macOS, specify the full library path
-        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", julia_dir);
-        println!("cargo:rustc-link-arg=-Wl,--push-state,--no-as-needed");
-        println!("cargo:rustc-link-arg=-Wl,{}/{}", julia_dir, lib_name);
-        println!("cargo:rustc-link-arg=-Wl,--pop-state");
-    }
-
-    // Copy the Julia library to the output directory only on Windows
-    if cfg!(target_os = "windows") {
+        
+        // Copy the Julia library to the output directory
         let out_dir = env::var("OUT_DIR").unwrap();
         let target_lib = PathBuf::from(&out_dir).join(lib_name);
         
-        // Copy the library to the output directory
         std::fs::copy(&julia_lib_path, &target_lib)
             .expect("Failed to copy Julia library");
 
@@ -50,5 +41,9 @@ fn main() {
         println!("cargo:rustc-link-lib=delayimp");
         println!("cargo:rustc-cdylib-link-arg=/DELAYLOAD:{}", lib_name);
         println!("cargo:rustc-link-arg=/INCLUDE:__rust_julia_init");
+    } else {
+        // No Linux/macOS, usamos o mesmo nome do arquivo .so
+        println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", julia_dir);
     }
 }
