@@ -51,36 +51,17 @@ fn main() {
         println!("cargo:rustc-cdylib-link-arg=/DELAYLOAD:{}", lib_name);
         println!("cargo:rustc-cdylib-link-arg=/INCLUDE:__rust_julia_init");
     } else {
-        // On Linux/macOS, create symbolic links with the names expected by the linker
-        let lib_link_name = PathBuf::from(&julia_dir).join("libPromptVeilCore.so");
-        if !lib_link_name.exists() {
-            // Create symbolic link libPromptVeilCore.so -> PromptVeilCore.so
-            fs::symlink(&julia_lib_path, &lib_link_name)
-                .expect("Failed to create symbolic link");
-        }
+        // On Linux/macOS, copy the library to the output directory (similar to Windows)
+        let out_dir = env::var("OUT_DIR").unwrap();
+        let target_lib = PathBuf::from(&out_dir).join(lib_name);
+        
+        std::fs::copy(&julia_lib_path, &target_lib)
+            .expect("Failed to copy Julia library");
 
-        // Get the output directory where our Rust library will be installed
-        let out_dir = env::var("OUT_DIR").expect("OUT_DIR must be set");
-        let out_dir = PathBuf::from(out_dir);
-        
-        // Create symbolic link for Julia library in the output directory
-        let julia_lib_target = PathBuf::from(&julia_lib_dir).join("libjulia.so.1.11");
-        let julia_lib_link = out_dir.join("libjulia.so.1.11");
-        
-        if !julia_lib_link.exists() && julia_lib_target.exists() {
-            println!("promptveil-core@0.1.0: Creating Julia library symlink at: {}", julia_lib_link.display());
-            fs::symlink(&julia_lib_target, &julia_lib_link)
-                .expect("Failed to create Julia symbolic link in output directory");
-        }
-        
         // Linking configuration
-        println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_dir);
-        println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,{}", julia_lib_dir.display());
         println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
-        println!("cargo:rustc-link-lib=dylib=julia");
         
-        // Add current directory to rpath
+        // Add output directory to rpath
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,$ORIGIN");
-        println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,$ORIGIN/../../..");
     }
 }
