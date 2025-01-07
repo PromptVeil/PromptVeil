@@ -28,7 +28,8 @@ fn main() {
     
     // Link against the Julia library
     if cfg!(target_os = "windows") {
-        println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
+        // Windows usa o arquivo .lib para linking
+        println!("cargo:rustc-link-arg=/DEFAULTLIB:{}", lib_ext);
         
         // Copy the Julia library to the output directory
         let out_dir = env::var("OUT_DIR").unwrap();
@@ -42,8 +43,8 @@ fn main() {
         println!("cargo:rustc-cdylib-link-arg=/DELAYLOAD:{}", lib_name);
         println!("cargo:rustc-link-arg=/INCLUDE:__rust_julia_init");
     } else {
-        // No Linux/macOS, usamos o mesmo nome do arquivo .so
-        println!("cargo:rustc-link-lib=dylib=PromptVeilCore");
+        // No Linux/macOS, passamos o caminho completo da biblioteca
         println!("cargo:rustc-link-arg=-Wl,-rpath,{}", julia_dir);
+        println!("cargo:rustc-link-arg={}/{}", julia_dir, lib_name);
     }
 }
