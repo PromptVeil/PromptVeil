@@ -117,9 +117,22 @@ fn main() {
             if source.is_symlink() {
                 let link_target = source.read_link()
                     .expect(&format!("Failed to read symlink: {}", julia_lib));
+                
+                // Remove existing symlink if it exists
+                if target.exists() {
+                    std::fs::remove_file(&target)
+                        .expect(&format!("Failed to remove existing symlink: {}", julia_lib));
+                }
+                
                 unix_fs::symlink(link_target, &target)
                     .expect(&format!("Failed to create symlink: {}", julia_lib));
             } else {
+                // Remove existing file if it exists
+                if target.exists() {
+                    std::fs::remove_file(&target)
+                        .expect(&format!("Failed to remove existing file: {}", julia_lib));
+                }
+                
                 std::fs::copy(&source, &target)
                     .expect(&format!("Failed to copy Julia runtime library: {}", julia_lib));
             }
