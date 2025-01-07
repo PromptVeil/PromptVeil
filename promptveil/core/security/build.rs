@@ -1,6 +1,7 @@
 use std::env;
 use std::path::PathBuf;
-use std::os::unix::fs;
+use std::os::unix::fs as unix_fs;
+use std::fs;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
@@ -114,9 +115,9 @@ fn main() {
                 source.display(), target.display());
                 
             if source.is_symlink() {
-                let link_target = fs::read_link(&source)
+                let link_target = source.read_link()
                     .expect(&format!("Failed to read symlink: {}", julia_lib));
-                std::os::unix::fs::symlink(link_target, &target)
+                unix_fs::symlink(link_target, &target)
                     .expect(&format!("Failed to create symlink: {}", julia_lib));
             } else {
                 std::fs::copy(&source, &target)
