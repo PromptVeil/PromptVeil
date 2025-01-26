@@ -7,6 +7,11 @@ using JlrsCore.Reflect
 using CUDA
 using LinearAlgebra
 
+# Constants for optimization thresholds
+const MIN_GPU_TOKENS = 1000
+const MIN_PARALLEL_SIZE = 1000
+const SIMD_VECTOR_SIZE = 4
+
 # Structs that will be reflected to Rust
 struct CompressionConfig
     use_gpu::Bool
@@ -49,12 +54,12 @@ export CompressionConfig, CompressedResult
 # Helper function to apply SIMD operations safely
 function apply_simd(data::Vector{UInt32})::Vector{UInt32}
     len = length(data)
-    padded_len = (len + 3) ÷ 4 * 4
+    padded_len = (len + SIMD_VECTOR_SIZE - 1) ÷ SIMD_VECTOR_SIZE * SIMD_VECTOR_SIZE
     padded = vcat(data, fill(UInt32(0), padded_len - len))
     
     result = similar(padded)
-    for i in 1:4:padded_len
-        v = vload(Vec{4,UInt32}, padded, i)
+    for i in 1:SIMD_VECTOR_SIZE:padded_len
+        v = vload(Vec{SIMD_VECTOR_SIZE,UInt32}, padded, i)
         vstore(v, result, i)
     end
     return result[1:len]
@@ -67,7 +72,7 @@ function optimize_tokens(tokens::Vector{UInt32}, config::CompressionConfig)::Com
         throw(ArgumentError("Input tokens cannot be empty"))
     end
 
-    # Apply SIMD if enabled (before compression)
+    # Apply SIMD if enabled
     input_tokens = if config.use_simd
         apply_simd(tokens)
     else
@@ -77,12 +82,8 @@ function optimize_tokens(tokens::Vector{UInt32}, config::CompressionConfig)::Com
     # Train and use BPE model if pattern detection is enabled
     if config.use_patterns
         try
-            # Train model with explicit parameters
+            # Train model
             model = TokenCompression.train_bpe(input_tokens)
-            
-            # Save model for reuse if needed
-            model_path = joinpath(@__DIR__, "trained_model.bson")
-            TokenCompression.save_model(model, model_path)
             
             # Use trained model for compression
             compressed = TokenCompression.optimize_tokens(input_tokens, model)
@@ -93,7 +94,7 @@ function optimize_tokens(tokens::Vector{UInt32}, config::CompressionConfig)::Com
                 length(compressed)
             )
         catch e
-            @warn "Failed to train/use BPE model, falling back to basic compression" exception=e
+            @warn "Pattern-based compression failed, falling back to basic compression" exception=e
         end
     end
     
@@ -104,6 +105,66 @@ function optimize_tokens(tokens::Vector{UInt32}, config::CompressionConfig)::Com
         compressed,
         length(tokens),
         length(compressed)
+    )
+end
+
+function compress_batch(tokens::Matrix{UInt32}, config::CompressionConfig)::CompressedResult
+    # Validate dimensions
+    if size(tokens, 1) == 0 || size(tokens, 2) == 0
+        throw(ArgumentError("Input matrix cannot be empty"))
+    end
+    if size(tokens, 2) < 2
+        throw(DimensionMismatch("Input matrix must have at least 2 columns for compression"))
+    end
+
+    total_tokens = size(tokens, 1) * size(tokens, 2)
+    
+    # Apply SIMD if enabled
+    input_matrix = if config.use_simd
+        reshape(apply_simd(vec(tokens)), size(tokens))
+    else
+        tokens
+    end
+    
+    # Use pattern detection if enabled
+    if config.use_patterns
+        try
+            # Train on the flattened matrix
+            model = TokenCompression.train_bpe(vec(input_matrix))
+            
+            # Process each sequence
+            compressed = similar(input_matrix)
+            for i in 1:size(input_matrix, 1)
+                # Convert SubArray to Vector explicitly
+                row = Vector{UInt32}(input_matrix[i, :])
+                compressed_row = TokenCompression.optimize_tokens(row, model)
+                compressed[i, 1:length(compressed_row)] = compressed_row
+                if length(compressed_row) < size(compressed, 2)
+                    compressed[i, (length(compressed_row)+1):end] .= 0
+                end
+            end
+            
+            # Count non-zero elements
+            nonzero_count = count(!iszero, compressed)
+            
+            return CompressedResult(
+                vec(compressed),
+                total_tokens,
+                nonzero_count
+            )
+        catch e
+            @warn "Pattern-based batch compression failed, falling back to basic compression" exception=e
+        end
+    end
+    
+    # Basic batch compression
+    compressed = TokenCompression.compress_batch(input_matrix)
+    nonzero_count = count(!iszero, compressed)
+    
+    return CompressedResult(
+        vec(compressed),
+        total_tokens,
+        nonzero_count
     )
 end
 
@@ -118,69 +179,6 @@ function decompress_tokens(compressed::Vector{UInt32})::Vector{UInt32}
         @warn "Decompression failed" exception=e
         rethrow(e)
     end
-end
-
-function compress_batch(tokens::Matrix{UInt32}, config::CompressionConfig)::CompressedResult
-    # Validate dimensions
-    if size(tokens, 1) == 0 || size(tokens, 2) == 0
-        throw(ArgumentError("Input matrix cannot be empty"))
-    end
-    if size(tokens, 2) < 2
-        throw(DimensionMismatch("Input matrix must have at least 2 columns for compression"))
-    end
-
-    total_tokens = size(tokens, 1) * size(tokens, 2)
-    
-    # Apply SIMD if enabled (before compression)
-    input_matrix = if config.use_simd
-        reshape(apply_simd(vec(tokens)), size(tokens))
-    else
-        tokens
-    end
-    
-    # Train and use BPE model if pattern detection is enabled
-    if config.use_patterns
-        try
-            # Train on the flattened matrix to capture patterns across all sequences
-            model = TokenCompression.train_bpe(vec(input_matrix))
-            
-            # Save batch model
-            model_path = joinpath(@__DIR__, "trained_batch_model.bson")
-            TokenCompression.save_model(model, model_path)
-            
-            # Compress each row using the trained model
-            compressed = similar(input_matrix)
-            for i in 1:size(input_matrix, 1)
-                row_vec = Vector{UInt32}(input_matrix[i, :])
-                compressed_row = TokenCompression.optimize_tokens(row_vec, model)
-                compressed[i, 1:length(compressed_row)] = compressed_row
-                if length(compressed_row) < size(compressed, 2)
-                    compressed[i, (length(compressed_row)+1):end] .= 0
-                end
-            end
-            
-            # Count only non-zero elements for compressed size
-            nonzero_count = count(!iszero, compressed)
-            
-            return CompressedResult(
-                vec(compressed),
-                total_tokens,
-                nonzero_count
-            )
-        catch e
-            @warn "Failed to train/use BPE model for batch, falling back to basic compression" exception=e
-        end
-    end
-    
-    # Basic batch compression
-    compressed = TokenCompression.compress_batch(input_matrix)
-    nonzero_count = count(!iszero, compressed)
-    
-    return CompressedResult(
-        vec(compressed),
-        total_tokens,
-        nonzero_count
-    )
 end
 
 function decompress_batch(compressed::Vector{UInt32}, rows::Int, cols::Int)::Matrix{UInt32}

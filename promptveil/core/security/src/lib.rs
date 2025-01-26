@@ -18,20 +18,20 @@ static INIT: Once = Once::new();
 fn init_julia() -> Result<(), String> {
     unsafe {
         INIT.call_once(|| {
-            eprintln!("DEBUG Rust: Initializing Julia runtime");
-            
+    eprintln!("DEBUG Rust: Initializing Julia runtime");
+    
             // Set up environment
-            let exe_dir = env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+    let exe_dir = env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
                 .ok_or("Failed to get executable directory")?;
-            
-            let old_path = env::var_os("PATH").unwrap_or_default();
-            let mut new_path = exe_dir.as_os_str().to_owned();
-            new_path.push(";");
-            new_path.push(&old_path);
-            env::set_var("PATH", new_path);
-            
+    
+    let old_path = env::var_os("PATH").unwrap_or_default();
+    let mut new_path = exe_dir.as_os_str().to_owned();
+    new_path.push(";");
+    new_path.push(&old_path);
+    env::set_var("PATH", new_path);
+    
             // Initialize Julia runtime
             let handle = Builder::new().start_local()
                 .map_err(|e| format!("Failed to start Julia: {}", e))?;
@@ -45,7 +45,7 @@ fn init_julia() -> Result<(), String> {
             })?;
             
             JULIA_HANDLE = Some(handle);
-            eprintln!("DEBUG Rust: Julia runtime initialized");
+        eprintln!("DEBUG Rust: Julia runtime initialized");
         });
         Ok(())
     }
@@ -65,9 +65,9 @@ impl Drop for JuliaCleanup {
     fn drop(&mut self) {
         unsafe {
             if let Some(handle) = JULIA_HANDLE.take() {
-                eprintln!("DEBUG Rust: Cleaning up Julia runtime");
+        eprintln!("DEBUG Rust: Cleaning up Julia runtime");
                 drop(handle);
-                eprintln!("DEBUG Rust: Julia runtime cleaned up");
+        eprintln!("DEBUG Rust: Julia runtime cleaned up");
             }
         }
     }
@@ -149,9 +149,9 @@ fn decompress_tokens(data: &[u8]) -> PyResult<Vec<u8>> {
         // Convert result back
         let decompressed: Vec<u32> = result.unbox()?;
         Ok(decompressed.iter()
-            .flat_map(|&token| token.to_le_bytes().to_vec())
+                .flat_map(|&token| token.to_le_bytes().to_vec())
             .collect())
-    })
+        })
     .map_err(|e| PyRuntimeError::new_err(format!("Julia error: {}", e)))
 }
 
