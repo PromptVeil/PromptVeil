@@ -74,27 +74,32 @@ function optimize_tokens(tokens::Vector{UInt32}, config::CompressionConfig)::Com
         tokens
     end
 
-    # Train model if pattern detection is enabled
-    model = if config.use_patterns
+    # Train and use BPE model if pattern detection is enabled
+    if config.use_patterns
         try
-            TokenCompression.train_bpe(input_tokens)
+            # Train model with explicit parameters
+            model = TokenCompression.train_bpe(input_tokens)
+            
+            # Save model for reuse if needed
+            model_path = joinpath(@__DIR__, "trained_model.bson")
+            TokenCompression.save_model(model, model_path)
+            
+            # Use trained model for compression
+            compressed = TokenCompression.optimize_tokens(input_tokens, model)
+            
+            return CompressedResult(
+                compressed,
+                length(tokens),
+                length(compressed)
+            )
         catch e
-            @warn "Failed to train BPE model, falling back to basic compression" exception=e
-            nothing
+            @warn "Failed to train/use BPE model, falling back to basic compression" exception=e
         end
-    else
-        nothing
     end
-
-    # Apply compression
-    compressed = if model !== nothing
-        # Use trained model for compression
-        TokenCompression.optimize_tokens(input_tokens, model)
-    else
-        # Basic compression without pattern detection
-        TokenCompression.optimize_tokens(input_tokens)
-    end
-
+    
+    # Basic compression without pattern detection
+    compressed = TokenCompression.optimize_tokens(input_tokens)
+    
     return CompressedResult(
         compressed,
         length(tokens),
@@ -133,45 +138,48 @@ function compress_batch(tokens::Matrix{UInt32}, config::CompressionConfig)::Comp
         tokens
     end
     
-    # Train model if pattern detection is enabled
-    model = if config.use_patterns
+    # Train and use BPE model if pattern detection is enabled
+    if config.use_patterns
         try
             # Train on the flattened matrix to capture patterns across all sequences
-            TokenCompression.train_bpe(vec(input_matrix))
-        catch e
-            @warn "Failed to train BPE model for batch, falling back to basic compression" exception=e
-            nothing
-        end
-    else
-        nothing
-    end
-
-    # Apply compression
-    compressed = if model !== nothing
-        # Compress each row using the trained model
-        result = similar(input_matrix)
-        for i in 1:size(input_matrix, 1)
-            # Convert row to vector before compression
-            row_vec = Vector{UInt32}(input_matrix[i, :])
-            compressed_row = TokenCompression.optimize_tokens(row_vec, model)
-            result[i, 1:length(compressed_row)] = compressed_row
-            if length(compressed_row) < size(result, 2)
-                result[i, (length(compressed_row)+1):end] .= 0
+            model = TokenCompression.train_bpe(vec(input_matrix))
+            
+            # Save batch model
+            model_path = joinpath(@__DIR__, "trained_batch_model.bson")
+            TokenCompression.save_model(model, model_path)
+            
+            # Compress each row using the trained model
+            compressed = similar(input_matrix)
+            for i in 1:size(input_matrix, 1)
+                row_vec = Vector{UInt32}(input_matrix[i, :])
+                compressed_row = TokenCompression.optimize_tokens(row_vec, model)
+                compressed[i, 1:length(compressed_row)] = compressed_row
+                if length(compressed_row) < size(compressed, 2)
+                    compressed[i, (length(compressed_row)+1):end] .= 0
+                end
             end
+            
+            # Count only non-zero elements for compressed size
+            nonzero_count = count(!iszero, compressed)
+            
+            return CompressedResult(
+                vec(compressed),
+                total_tokens,
+                nonzero_count
+            )
+        catch e
+            @warn "Failed to train/use BPE model for batch, falling back to basic compression" exception=e
         end
-        result
-    else
-        # Basic batch compression
-        TokenCompression.compress_batch(input_matrix)
     end
-
-    # Count only non-zero elements for compressed size
+    
+    # Basic batch compression
+    compressed = TokenCompression.compress_batch(input_matrix)
     nonzero_count = count(!iszero, compressed)
-
+    
     return CompressedResult(
-        vec(compressed),  # Convert matrix to vector for consistent return type
+        vec(compressed),
         total_tokens,
-        nonzero_count  # Use actual number of non-zero elements
+        nonzero_count
     )
 end
 

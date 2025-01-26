@@ -7,7 +7,7 @@ using CUDA
     @testset "Basic Compression" begin
         # Test data with known patterns (repeated sequence)
         base_pattern = UInt32[1000, 2000, 3000, 4000]
-        tokens = vcat(fill(base_pattern, 10)...)  # Create sequence with lots of repetition
+        tokens = vcat(fill(base_pattern, 50)...)  # Increased repetitions for better pattern detection
         
         # Test without patterns (basic compression)
         config = PromptVeilCore.CompressionConfig(false, false, false)
@@ -24,19 +24,20 @@ using CUDA
         
         # Pattern detection should give better compression for repeated data
         @test pattern_result.compressed_size < result.compressed_size
+        @test pattern_result.compressed_size < 0.8 * pattern_result.original_size  # At least 20% compression
     end
     
     @testset "Pattern Detection" begin
         # Create sequence with known patterns
         pattern1 = UInt32[1000, 2000]
         pattern2 = UInt32[3000, 4000]
-        tokens = vcat(repeat(pattern1, 10), repeat(pattern2, 10))  # More repetitions
+        tokens = vcat(repeat(pattern1, 50), repeat(pattern2, 50))  # Increased repetitions
         
         config = PromptVeilCore.CompressionConfig(false, false, true)
         result = PromptVeilCore.optimize_tokens(tokens, config)
         
-        # Patterns should be detected and compressed
-        @test result.compressed_size < 0.7 * result.original_size
+        # Patterns should be detected and compressed significantly
+        @test result.compressed_size < 0.6 * result.original_size  # At least 40% compression
         
         # Test with random data (should compress less)
         random_tokens = rand(UInt32(1):UInt32(1000), length(tokens))
@@ -44,12 +45,13 @@ using CUDA
         
         # Random data should compress less than patterned data
         @test result.compressed_size < random_result.compressed_size
+        @test random_result.compressed_size > 0.8 * random_result.original_size  # Random data compresses less
     end
     
     @testset "Batch Compression" begin
         # Create test batch with patterns
         base_pattern = UInt32[1 2 3; 4 5 6; 7 8 9]
-        pattern_batch = repeat(base_pattern, outer=(10, 1))
+        pattern_batch = repeat(base_pattern, outer=(50, 1))  # Increased repetitions
         
         # Test without patterns
         config = PromptVeilCore.CompressionConfig(false, false, false)
@@ -65,6 +67,7 @@ using CUDA
         
         # Pattern detection should give better compression
         @test pattern_result.compressed_size < result.compressed_size
+        @test pattern_result.compressed_size < 0.7 * pattern_result.original_size  # At least 30% compression
         
         # Test with random batch
         random_batch = rand(UInt32(1):UInt32(1000), size(pattern_batch)...)
@@ -72,6 +75,7 @@ using CUDA
         
         # Patterns should compress better than random data
         @test pattern_result.compressed_size < random_result.compressed_size
+        @test random_result.compressed_size > 0.8 * random_result.original_size  # Random data compresses less
     end
     
     @testset "SIMD Optimization" begin
