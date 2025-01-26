@@ -18,7 +18,8 @@ static mut JULIA_HANDLE: Option<CCall<'static>> = None;
 
 fn init_julia() -> PyResult<()> {
     INIT.call_once(|| unsafe {
-        let ccall = CCall::initialize().expect("Failed to initialize Julia");
+        let mut frame = StackFrame::new();
+        let ccall = CCall::new(&mut frame);
         JULIA_HANDLE = Some(ccall);
     });
     Ok(())
@@ -32,13 +33,20 @@ fn get_julia() -> PyResult<&'static CCall<'static>> {
 }
 
 julia_module! {
-    become promptveil_core_init;
+    become promptveil_core;
 
     #[ccall]
-    fn optimize_tokens(tokens: ArrayRef<'_, '_>, config: CompressionConfig) -> JlrsResult<CompressedResult<'_, '_>> {
+    fn optimize_tokens(tokens: TypedArray<'_, '_, u32>, use_gpu: bool, use_simd: bool, use_patterns: bool) 
+        -> JlrsResult<CompressedResult<'_, '_>> {
         let module = Module::main(&frame).submodule(&mut frame, "PromptVeilCore")?;
         let func = module.function(&mut frame, "optimize_tokens")?;
         
+        let config = CompressionConfig {
+            use_gpu: Bool::new(use_gpu),
+            use_simd: Bool::new(use_simd),
+            use_patterns: Bool::new(use_patterns),
+        };
+
         unsafe {
             func.call2(&mut frame, tokens, config)
                 .into_jlrs_result()?
@@ -47,11 +55,17 @@ julia_module! {
     }
 
     #[ccall]
-    fn compress_batch(tokens: ArrayRef<'_, '_>, rows: i64, cols: i64, config: CompressionConfig) 
+    fn compress_batch(tokens: TypedArray<'_, '_, u32>, rows: i64, cols: i64, use_gpu: bool, use_simd: bool, use_patterns: bool) 
         -> JlrsResult<CompressedResult<'_, '_>> {
         let module = Module::main(&frame).submodule(&mut frame, "PromptVeilCore")?;
         let func = module.function(&mut frame, "compress_batch")?;
         
+        let config = CompressionConfig {
+            use_gpu: Bool::new(use_gpu),
+            use_simd: Bool::new(use_simd),
+            use_patterns: Bool::new(use_patterns),
+        };
+
         unsafe {
             func.call4(&mut frame, tokens, rows, cols, config)
                 .into_jlrs_result()?
@@ -70,16 +84,10 @@ pub fn optimize_tokens(
     let julia = get_julia()?;
 
     julia.scope(|mut frame| {
-        let config = CompressionConfig {
-            use_gpu: Bool::new(use_gpu),
-            use_simd: Bool::new(use_simd),
-            use_patterns: Bool::new(use_patterns),
-        };
-
-        let tokens_array = Array::new(&mut frame, &tokens)?;
+        let tokens_array = TypedArray::from_slice(&mut frame, &tokens)?;
         
         let result = unsafe {
-            optimize_tokens(&mut frame, tokens_array.as_array_ref(), config)?
+            promptveil_core::optimize_tokens(&mut frame, tokens_array, use_gpu, use_simd, use_patterns)?
         };
 
         Ok((result.data().to_vec(), result.size() as usize))
@@ -98,16 +106,10 @@ pub fn compress_batch(
     let julia = get_julia()?;
 
     julia.scope(|mut frame| {
-        let config = CompressionConfig {
-            use_gpu: Bool::new(use_gpu),
-            use_simd: Bool::new(use_simd),
-            use_patterns: Bool::new(use_patterns),
-        };
-
-        let tokens_array = Array::new(&mut frame, &tokens)?;
+        let tokens_array = TypedArray::from_slice(&mut frame, &tokens)?;
         
         let result = unsafe {
-            compress_batch(&mut frame, tokens_array.as_array_ref(), rows, cols, config)?
+            promptveil_core::compress_batch(&mut frame, tokens_array, rows, cols, use_gpu, use_simd, use_patterns)?
         };
 
         Ok((result.data().to_vec(), result.size() as usize))

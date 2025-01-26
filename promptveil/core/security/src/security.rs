@@ -1,9 +1,9 @@
 use aes_gcm::{
     aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce,
+    Aes256Gcm, Error as AesError, Nonce,
 };
 use rand::RngCore;
-use std::io;
+use thiserror::Error;
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize)]
@@ -13,24 +13,24 @@ pub struct EncryptedData {
 }
 
 impl EncryptedData {
-    pub fn new(data: &[u8], key: &[u8; 32]) -> io::Result<Self> {
+    pub fn new(data: &[u8], key: &[u8; 32]) -> Result<Self, SecurityError> {
         let cipher = Aes256Gcm::new(key.into());
         let mut nonce = [0u8; 12];
         rand::thread_rng().fill_bytes(&mut nonce);
         
         let ciphertext = cipher
             .encrypt(Nonce::from_slice(&nonce), data)
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Encryption failed"))?;
+            .map_err(|e| SecurityError::EncryptionError(e))?;
 
         Ok(Self { ciphertext, nonce })
     }
 
-    pub fn decrypt(&self, key: &[u8; 32]) -> io::Result<Vec<u8>> {
+    pub fn decrypt(&self, key: &[u8; 32]) -> Result<Vec<u8>, SecurityError> {
         let cipher = Aes256Gcm::new(key.into());
         
         cipher
             .decrypt(Nonce::from_slice(&self.nonce), self.ciphertext.as_ref())
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Decryption failed"))
+            .map_err(|e| SecurityError::DecryptionError(Box::new(e)))
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
@@ -42,61 +42,51 @@ impl EncryptedData {
     }
 }
 
-pub fn generate_key() -> io::Result<[u8; 32]> {
+#[derive(Debug, Error)]
+pub enum SecurityError {
+    #[error("Encryption error: {0}")]
+    EncryptionError(#[from] AesError),
+    #[error("Decryption error: {0}")]
+    DecryptionError(#[from] Box<dyn std::error::Error>),
+    #[error("Invalid key length")]
+    InvalidKeyLength,
+}
+
+pub fn generate_key() -> Result<[u8; 32], SecurityError> {
     let mut key = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut key);
     Ok(key)
 }
 
-pub fn encrypt(data: &[u8], key: &[u8]) -> io::Result<Vec<u8>> {
-    if key.len() != 32 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Key must be 32 bytes",
-        ));
-    }
-
+pub fn encrypt(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, SecurityError> {
     let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid key length"))?;
+        .map_err(|_| SecurityError::InvalidKeyLength)?;
 
     let mut nonce = [0u8; 12];
     rand::thread_rng().fill_bytes(&mut nonce);
     let nonce = Nonce::from_slice(&nonce);
 
-    let ciphertext = cipher
-        .encrypt(nonce, data)
-        .map_err(|_| io::Error::new(io::ErrorKind::Other, "Encryption failed"))?;
-
-    let mut result = Vec::with_capacity(12 + ciphertext.len());
-    result.extend_from_slice(nonce.as_slice());
+    let mut result = nonce.to_vec();
+    let ciphertext = cipher.encrypt(nonce, data)
+        .map_err(SecurityError::EncryptionError)?;
     result.extend_from_slice(&ciphertext);
+
     Ok(result)
 }
 
-pub fn decrypt(data: &[u8], key: &[u8]) -> io::Result<Vec<u8>> {
-    if key.len() != 32 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Key must be 32 bytes",
-        ));
-    }
-
+pub fn decrypt(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, SecurityError> {
     if data.len() < 12 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Data too short",
-        ));
+        return Err(SecurityError::DecryptionError("Invalid data length".into()));
     }
 
     let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid key length"))?;
+        .map_err(|_| SecurityError::InvalidKeyLength)?;
 
     let nonce = Nonce::from_slice(&data[..12]);
     let ciphertext = &data[12..];
 
-    cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|_| io::Error::new(io::ErrorKind::Other, "Decryption failed"))
+    cipher.decrypt(nonce, ciphertext)
+        .map_err(|e| SecurityError::DecryptionError(Box::new(e)))
 }
 
 #[cfg(test)]
