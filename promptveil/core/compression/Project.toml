@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [compat]
 CUDA = "5"
+JlrsCore = "0.5"
 LinearAlgebra = "1.11.0"
 PackageCompiler = "2.2.0"
 SIMD = "3"
@@ -13,6 +14,7 @@ julia = "1.6"
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+JlrsCore = "6790e2af-1c88-4075-91d9-c0f4f9e8478d"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 PackageCompiler = "9b87118b-4619-50d2-8e1e-99f35a4d4d9d"
 SIMD = "fdea26ae-647d-5447-a871-4b548cad5224"

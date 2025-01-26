@@ -1,5 +1,5 @@
 [package]
-name = "promptveil-core"
+name = "promptveil_core"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,9 +12,11 @@ default = ["pyo3"]
 pyo3 = ["dep:pyo3"]
 
 [dependencies]
-pyo3 = { version = "0.20.0", features = ["extension-module"], optional = true }
-rand = "0.8"
+pyo3 = { version = "0.20", features = ["extension-module"] }
+jlrs = { version = "0.21.1", features = ["local-rt", "julia-1-11", "async"] }
 aes-gcm = "0.10.3"
+rand = "0.8.5"
+thiserror = "1.0"
 bincode = "1.3.3"
 serde = { version = "1.0", features = ["derive"] }
 libc = "0.2"
@@ -22,6 +24,7 @@ libc = "0.2"
 [build-dependencies]
 bindgen = "0.69.2"
 glob = "0.3.1"
+pyo3-build-config = "0.20"
 
 [package.metadata.maturin]
 python-source = "python"
@@ -30,4 +33,7 @@ python-source = "python"
 dependencies = ["julia"]
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2" 
+libc = "0.2"
+
+[profile.release]
+panic = "abort" 

@@ -2,9 +2,12 @@ use std::env;
 use std::path::PathBuf;
 use std::os::unix::fs as unix_fs;
 use std::fs;
+use std::process::Command;
+use std::path::Path;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=../compression/src/PromptVeilCore.jl");
     
     // Get the workspace directory (root of the project)
     let current_dir = env::current_dir()
@@ -179,4 +182,44 @@ fn main() {
         // Add output directory to rpath
         println!("cargo:rustc-cdylib-link-arg=-Wl,-rpath,$ORIGIN");
     }
+
+    // Get the output directory
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let layouts_path = Path::new(&out_dir).join("layouts.rs");
+    
+    // Run Julia to generate layouts
+    let julia_script = r#"
+        using JlrsCore.Reflect
+        include("../compression/src/PromptVeilCore.jl")
+        
+        # Generate layouts for our types
+        layouts = reflect([PromptVeilCore.CompressionConfig, PromptVeilCore.CompressedResult])
+        
+        # Write to the output file
+        open(ARGS[1], "w") do f
+            write(f, layouts)
+        end
+    "#;
+    
+    // Create temporary script file
+    std::fs::write("build_script.jl", julia_script).unwrap();
+    
+    // Run Julia script
+    let status = Command::new("julia")
+        .arg("build_script.jl")
+        .arg(&layouts_path)
+        .status()
+        .expect("Failed to run Julia script");
+        
+    if !status.success() {
+        panic!("Failed to generate Rust layouts from Julia types");
+    }
+    
+    // Clean up
+    std::fs::remove_file("build_script.jl").unwrap();
+    
+    // Copy generated layouts to src directory
+    std::fs::copy(layouts_path, "src/layouts.rs").unwrap();
+    
+    println!("cargo:rerun-if-changed=src/layouts.rs");
 } 
