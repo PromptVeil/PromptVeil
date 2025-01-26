@@ -1,3 +1,4 @@
+#![allow(clippy::all)]
 use jlrs::prelude::*;
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyIOError, PyRuntimeError};
@@ -11,6 +12,8 @@ use jlrs::data::managed::module::Module;
 use jlrs::data::managed::value::Value;
 use jlrs::data::types::construct::TypeConstructor;
 use jlrs::convert::ccall_types::CCallArg;
+use jlrs::convert::into_julia::IntoJulia;
+use jlrs::data::managed::array::Array;
 
 mod compression;
 mod security;
@@ -19,50 +22,31 @@ mod layouts;  // Generated layouts from Julia
 use crate::layouts::{CompressionConfig, CompressedResult};
 
 // Initialize Julia runtime once
-static mut JULIA_HANDLE: Option<CCall> = None;
+static mut JULIA_HANDLE: Option<CCall<'static>> = None;
 static INIT: Once = Once::new();
 
 fn init_julia() -> Result<(), String> {
-    unsafe {
-        INIT.call_once(|| {
-    eprintln!("DEBUG Rust: Initializing Julia runtime");
-    
-            // Set up environment
-    let exe_dir = env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-                .ok_or("Failed to get executable directory")?;
-    
-    let old_path = env::var_os("PATH").unwrap_or_default();
-    let mut new_path = exe_dir.as_os_str().to_owned();
-    new_path.push(";");
-    new_path.push(&old_path);
-    env::set_var("PATH", new_path);
-    
-            // Initialize Julia runtime
-            let ccall = CCall::new();
+    INIT.call_once(|| {
+        let exe_dir = env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .ok_or("Failed to get executable directory")
+            .unwrap();
+
+        unsafe {
+            let mut frame = StackFrame::new();
+            let ccall = CCall::new(&mut frame);
             JULIA_HANDLE = Some(ccall);
-            
-            // Load PromptVeilCore module
-            ccall.scope(|mut frame| -> JlrsResult<()> {
-                let module = Module::main(&frame);
-                module.function(&mut frame, "using")?
-                    .call1(&mut frame, Value::new(&mut frame, "PromptVeilCore"))?;
-                Ok(())
-            })?;
-            
-        eprintln!("DEBUG Rust: Julia runtime initialized");
-        });
-        Ok(())
-    }
+        }
+    });
+    Ok(())
 }
 
-fn get_julia() -> Result<&'static mut CCall, String> {
+fn get_julia() -> Result<&'static CCall<'static>, String> {
     unsafe {
-        init_julia()?;
         JULIA_HANDLE
-            .as_mut()
-            .ok_or_else(|| "Julia runtime not initialized".to_string())
+            .as_ref()
+            .ok_or_else(|| "Julia not initialized".to_string())
     }
 }
 
@@ -84,20 +68,103 @@ impl Drop for JuliaCleanup {
 // Static instance to ensure cleanup
 static mut CLEANUP: Option<JuliaCleanup> = Some(JuliaCleanup);
 
-julia_module! {
-    become promptveil_init_fn;
-
-    fn optimize_tokens(
-        tokens: ArrayRef<'_, '_>,
+#[julia_module]
+impl Module {
+    #[ccall]
+    fn optimize_tokens<'scope>(
+        tokens: ArrayRef<'scope, 'scope>,
         config: CompressionConfig
-    ) -> CompressedResult<'_, '_>;
+    ) -> Result<CompressedResult<'scope, 'scope>, Box<JlrsError>> {
+        let module = Module::main(&frame).submodule(&mut frame, "PromptVeilCore")?;
+        let func = module.function(&mut frame, "optimize_tokens")?;
 
-    fn compress_batch(
-        tokens: ArrayRef<'_, '_>,
+        let result = unsafe {
+            func.call2(&mut frame, tokens, config)
+                .into_jlrs_result()?
+        };
+
+        Ok(result.unbox()?)
+    }
+
+    #[ccall] 
+    fn compress_batch<'scope>(
+        tokens: ArrayRef<'scope, 'scope>,
         rows: i64,
         cols: i64,
         config: CompressionConfig
-    ) -> CompressedResult<'_, '_>;
+    ) -> Result<CompressedResult<'scope, 'scope>, Box<JlrsError>> {
+        let module = Module::main(&frame).submodule(&mut frame, "PromptVeilCore")?;
+        let func = module.function(&mut frame, "compress_batch")?;
+
+        let result = unsafe {
+            func.call4(&mut frame, tokens, rows, cols, config)
+                .into_jlrs_result()?
+        };
+
+        Ok(result.unbox()?)
+    }
+}
+
+#[pyfunction]
+pub fn optimize_tokens(
+    tokens: Vec<u32>,
+    use_gpu: bool,
+    use_simd: bool,
+    use_patterns: bool,
+) -> PyResult<(Vec<u32>, usize)> {
+    init_julia().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
+    let julia = get_julia().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
+
+    julia.scope(|mut frame| {
+        let config = CompressionConfig {
+            use_gpu: Bool::new(use_gpu),
+            use_simd: Bool::new(use_simd),
+            use_patterns: Bool::new(use_patterns),
+        };
+
+        // Convert tokens to Julia array
+        let tokens_array = Array::new(&mut frame, &tokens)?;
+
+        // Call function
+        let result = Module::optimize_tokens(&mut frame, tokens_array.as_array_ref(), config)?;
+
+        let compressed_data = result.data().to_vec();
+        let compressed_size = result.size() as usize;
+
+        Ok((compressed_data, compressed_size))
+    }).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{:?}", e)))
+}
+
+#[pyfunction]
+pub fn compress_batch(
+    tokens: Vec<u32>,
+    rows: i64,
+    cols: i64,
+    use_gpu: bool,
+    use_simd: bool,
+    use_patterns: bool,
+) -> PyResult<(Vec<u32>, usize)> {
+    init_julia().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
+    let julia = get_julia().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
+
+    julia.scope(|mut frame| {
+        let config = CompressionConfig {
+            use_gpu: Bool::new(use_gpu),
+            use_simd: Bool::new(use_simd),
+            use_patterns: Bool::new(use_patterns),
+        };
+
+        // Convert tokens to Julia array
+        let tokens_array = Array::new(&mut frame, &tokens)?;
+
+        // Call function
+        let result = Module::compress_batch(&mut frame, tokens_array.as_array_ref(), rows, cols, config)?;
+
+        let compressed_data = result.data().to_vec();
+        let compressed_size = result.size() as usize;
+
+        Ok((compressed_data, compressed_size))
+    }).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{:?}", e)))
 }
 
 #[pymodule]
@@ -105,7 +172,8 @@ fn promptveil_core(_py: Python, m: &PyModule) -> PyResult<()> {
     // Initialize Julia on module load
     init_julia().map_err(|e| PyRuntimeError::new_err(e))?;
     
-    m.add_function(wrap_pyfunction!(compress_tokens, m)?)?;
+    m.add_function(wrap_pyfunction!(optimize_tokens, m)?)?;
+    m.add_function(wrap_pyfunction!(compress_batch, m)?)?;
     m.add_function(wrap_pyfunction!(decompress_tokens, m)?)?;
     m.add_function(wrap_pyfunction!(encrypt, m)?)?;
     m.add_function(wrap_pyfunction!(decrypt, m)?)?;
