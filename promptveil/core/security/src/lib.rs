@@ -7,15 +7,19 @@ use std::sync::Once;
 use jlrs::ccall::CCall;
 use jlrs::data::managed::array::ArrayRef;
 use jlrs::data::layout::bool::Bool;
+use jlrs::data::managed::module::Module;
+use jlrs::data::managed::value::Value;
+use jlrs::data::types::construct::TypeConstructor;
+use jlrs::convert::ccall_types::CCallArg;
 
 mod compression;
 mod security;
 mod layouts;  // Generated layouts from Julia
 
-use crate::layouts::{CompressionConfig as JuliaConfig, CompressedResult as JuliaResult};
+use crate::layouts::{CompressionConfig, CompressedResult};
 
 // Initialize Julia runtime once
-static mut JULIA_HANDLE: Option<LocalHandle> = None;
+static mut JULIA_HANDLE: Option<CCall> = None;
 static INIT: Once = Once::new();
 
 fn init_julia() -> Result<(), String> {
@@ -36,28 +40,29 @@ fn init_julia() -> Result<(), String> {
     env::set_var("PATH", new_path);
     
             // Initialize Julia runtime
-            let handle = Builder::new().start_local()
-                .map_err(|e| format!("Failed to start Julia: {}", e))?;
+            let ccall = CCall::new();
+            JULIA_HANDLE = Some(ccall);
             
             // Load PromptVeilCore module
-            handle.local_scope::<_, 1>(|mut frame| -> JlrsResult<()> {
+            ccall.scope(|mut frame| -> JlrsResult<()> {
                 let module = Module::main(&frame);
                 module.function(&mut frame, "using")?
                     .call1(&mut frame, Value::new(&mut frame, "PromptVeilCore"))?;
                 Ok(())
             })?;
             
-            JULIA_HANDLE = Some(handle);
         eprintln!("DEBUG Rust: Julia runtime initialized");
         });
         Ok(())
     }
 }
 
-fn get_julia() -> Result<&'static mut LocalHandle, String> {
+fn get_julia() -> Result<&'static mut CCall, String> {
     unsafe {
         init_julia()?;
-        JULIA_HANDLE.as_mut().ok_or_else(|| "Julia runtime not initialized".to_string())
+        JULIA_HANDLE
+            .as_mut()
+            .ok_or_else(|| "Julia runtime not initialized".to_string())
     }
 }
 
@@ -67,9 +72,9 @@ struct JuliaCleanup;
 impl Drop for JuliaCleanup {
     fn drop(&mut self) {
         unsafe {
-            if let Some(handle) = JULIA_HANDLE.take() {
+            if let Some(ccall) = JULIA_HANDLE.take() {
         eprintln!("DEBUG Rust: Cleaning up Julia runtime");
-                drop(handle);
+                drop(ccall);
         eprintln!("DEBUG Rust: Julia runtime cleaned up");
             }
         }
@@ -110,38 +115,63 @@ fn promptveil_core(_py: Python, m: &PyModule) -> PyResult<()> {
 
 // Compression functions using JLRS
 #[pyfunction]
-fn compress_tokens(data: &[u8], use_gpu: bool, use_simd: bool, use_patterns: bool) -> PyResult<Vec<u8>> {
-    let tokens = bytes_to_tokens(data)?;
-    let julia = get_julia().map_err(|e| PyRuntimeError::new_err(e))?;
-    
-    julia.local_scope::<_, 3>(|mut frame| -> JlrsResult<Vec<u8>> {
-        // Create config struct using generated layout
-        let config = Value::new(&mut frame, JuliaConfig {
-            use_gpu,
-            use_simd,
-            use_patterns,
-        });
-        
-        // Get PromptVeilCore module and function
-        let module = Module::main(&frame).submodule(&mut frame, "PromptVeilCore")?;
-        let func = module.function(&mut frame, "optimize_tokens")?;
-        
-        // Convert tokens to Julia array
-        let tokens_array = Value::new(&mut frame, tokens);
-        
-        // Call function
-        let result = unsafe { 
-            func.call2(&mut frame, tokens_array, config)
-                .into_jlrs_result()?
+pub fn compress_tokens(
+    tokens: Vec<u32>,
+    use_gpu: bool,
+    use_simd: bool,
+    use_patterns: bool,
+) -> PyResult<(Vec<u32>, usize)> {
+    init_julia()?;
+    let julia = get_julia()?;
+
+    julia.scope(|mut frame| {
+        let config = CompressionConfig {
+            use_gpu: Bool::from_bool(use_gpu),
+            use_simd: Bool::from_bool(use_simd),
+            use_patterns: Bool::from_bool(use_patterns),
         };
-        
-        // Convert result back using generated layout
-        let compressed_result: JuliaResult = result.unbox()?;
-        Ok(compressed_result.data.iter()
-            .flat_map(|&token| token.to_le_bytes().to_vec())
-            .collect())
+
+        let tokens_array = Value::new(&mut frame, tokens.as_slice());
+        let result = unsafe {
+            compression::optimize_tokens(tokens_array.into(), config)
+        };
+
+        let compressed_data = result.data().to_vec();
+        let compressed_size = result.size() as usize;
+
+        Ok((compressed_data, compressed_size))
     })
-    .map_err(|e| PyRuntimeError::new_err(format!("Julia error: {}", e)))
+}
+
+#[pyfunction]
+pub fn compress_batch(
+    tokens: Vec<u32>,
+    rows: i64,
+    cols: i64,
+    use_gpu: bool,
+    use_simd: bool,
+    use_patterns: bool,
+) -> PyResult<(Vec<u32>, usize)> {
+    init_julia()?;
+    let julia = get_julia()?;
+
+    julia.scope(|mut frame| {
+        let config = CompressionConfig {
+            use_gpu: Bool::from_bool(use_gpu),
+            use_simd: Bool::from_bool(use_simd),
+            use_patterns: Bool::from_bool(use_patterns),
+        };
+
+        let tokens_array = Value::new(&mut frame, tokens.as_slice());
+        let result = unsafe {
+            compression::compress_batch(tokens_array.into(), rows, cols, config)
+        };
+
+        let compressed_data = result.data().to_vec();
+        let compressed_size = result.size() as usize;
+
+        Ok((compressed_data, compressed_size))
+    })
 }
 
 #[pyfunction]
@@ -216,8 +246,8 @@ mod tests {
     #[test]
     fn test_compression() {
         let data = b"Hello, World!".repeat(100);
-        let compressed = compress_tokens(&data, true, true, true).unwrap();
-        let decompressed = decompress_tokens(&compressed).unwrap();
+        let compressed = compress_tokens(data.iter().cloned().collect(), true, true, true).unwrap();
+        let decompressed = decompress_tokens(&compressed.0).unwrap();
         assert_eq!(data.to_vec(), decompressed);
     }
 
@@ -225,6 +255,6 @@ mod tests {
     fn test_julia_errors() {
         // Test invalid data length
         let data = vec![1, 2, 3]; // Not multiple of 4
-        assert!(compress_tokens(&data, false, false, false).is_err());
+        assert!(compress_tokens(data.iter().cloned().collect(), false, false, false).is_err());
     }
 } 
