@@ -27,7 +27,8 @@ Pkg.add([
     "PackageCompiler",
     "SIMD",
     "LinearAlgebra",
-    "Statistics"
+    "Statistics",
+    "JlrsCore"
 ])
 
 # Build CUDA if available
