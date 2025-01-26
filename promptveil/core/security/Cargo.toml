@@ -12,7 +12,7 @@ default = ["pyo3"]
 pyo3 = ["dep:pyo3"]
 
 [dependencies]
-pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
 jlrs = { version = "0.21.1", features = ["local-rt", "julia-1-11", "async"] }
 aes-gcm = "0.10.3"
 rand = "0.8.5"
