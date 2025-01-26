@@ -141,9 +141,9 @@ function compress_batch(tokens::Matrix{UInt32}, config::CompressionConfig)::Comp
                 compressed[i, 1:length(compressed_row)] = compressed_row
                 if length(compressed_row) < size(compressed, 2)
                     compressed[i, (length(compressed_row)+1):end] .= 0
-                end
-            end
-            
+    end
+end
+
             # Count non-zero elements
             nonzero_count = count(!iszero, compressed)
             
