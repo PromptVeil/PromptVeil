@@ -24,9 +24,6 @@ Pkg.add([
     "Test"
 ])
 
-# Develop the local package
-Pkg.develop(PackageSpec(path=@__DIR__))
-
 # Force update to get latest versions
 Pkg.update()
 
@@ -45,7 +42,9 @@ Pkg.precompile()
 # Test that everything is working
 @info "Testing if module can be loaded..."
 try
-    using PromptVeilCore
+    # Since we're already in the package directory, just use the module directly
+    include(joinpath(@__DIR__, "src", "PromptVeilCore.jl"))
+    using .PromptVeilCore
     @info "PromptVeilCore loaded successfully"
 catch e
     @error "Failed to load PromptVeilCore" exception=e
