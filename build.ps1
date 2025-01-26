@@ -4,6 +4,16 @@ param(
     [switch]$ForceJuliaRebuild
 )
 
+# Function to get system resources and calculate optimal jobs
+function Get-OptimalJobCount {
+    $numCores = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
+    $totalMemoryGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
+    $optimalJobs = [math]::Floor($numCores * 0.75)
+    $memPerJob = 2  # GB per job
+    $maxJobsByMem = [math]::Floor($totalMemoryGB / $memPerJob)
+    return [math]::Min($optimalJobs, $maxJobsByMem)
+}
+
 function Write-TimestampedMessage {
     param(
         [string]$Message,
@@ -13,7 +23,26 @@ function Write-TimestampedMessage {
     Write-Host "[$timestamp] $Message" -ForegroundColor $Color
 }
 
+function Get-SourceHash {
+    param([string]$Path)
+    $sourceFiles = Get-ChildItem -Path $Path -File -Recurse
+    $sourceHashes = $sourceFiles | ForEach-Object { Get-FileHash $_.FullName } | ForEach-Object { $_.Hash }
+    return [string]::Join("", $sourceHashes)
+}
+
 $startTime = Get-Date
+
+# Get optimal job count for parallel builds
+$numJobs = Get-OptimalJobCount
+Write-TimestampedMessage "System resources:" -Color Yellow
+Write-TimestampedMessage "  - CPU cores: $((Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors)" -Color Yellow
+Write-TimestampedMessage "  - Memory: $([math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB))GB" -Color Yellow
+Write-TimestampedMessage "Using $numJobs parallel jobs for compilation" -Color Yellow
+
+# Set environment variables for build optimization
+$env:CMAKE_BUILD_PARALLEL_LEVEL = "$numJobs"
+$env:CARGO_BUILD_JOBS = "$numJobs"
+$env:JULIA_NUM_THREADS = "$numJobs"
 
 # Check prerequisites
 Write-TimestampedMessage "Checking prerequisites..." -Color Cyan
@@ -62,24 +91,8 @@ if ($ForceJuliaRebuild) {
 
 # Check if we need to rebuild Julia module
 $juliaLibPath = "promptveil/core/compression/PromptVeilCore.dll"
-$juliaImportLibPath = "promptveil/core/compression/PromptVeilCore.lib"
 $juliaCachePath = "build/julia_cache"
 $needJuliaBuild = $true
-
-# Define required files based on OS
-$isWindows = $PSVersionTable.Platform -eq $null -or $PSVersionTable.Platform -eq "Win32NT"
-$isMacOS = $PSVersionTable.OS -like "*Darwin*"
-
-$requiredFiles = if ($isWindows) {
-    @(
-        "promptveil/core/compression/PromptVeilCore.dll",
-        "promptveil/core/compression/PromptVeilCore.lib",
-        "promptveil/core/compression/PromptVeilCore.exp",
-        "promptveil/core/compression/PromptVeilCore.def"
-    )
-} else {
-    @("promptveil/core/compression/PromptVeilCore.$(if ($isMacOS) { 'dylib' } else { 'so' })")
-}
 
 # Skip cache check if forcing rebuild
 if ($ForceJuliaRebuild) {
@@ -87,13 +100,20 @@ if ($ForceJuliaRebuild) {
     $needJuliaBuild = $true
 } else {
     # Check if all required files exist
+    $requiredFiles = @(
+        "promptveil/core/compression/PromptVeilCore.dll",
+        "promptveil/core/compression/PromptVeilCore.lib",
+        "promptveil/core/compression/PromptVeilCore.exp",
+        "promptveil/core/compression/PromptVeilCore.def"
+    )
+    
     $missingFiles = $requiredFiles | Where-Object { -not (Test-Path $_) }
     if ($missingFiles) {
         Write-TimestampedMessage "Missing required files:" -Color Yellow
         $missingFiles | ForEach-Object { Write-TimestampedMessage "  - $_" -Color Yellow }
         $needJuliaBuild = $true
     } else {
-        # Initialize cache with existing files if no cache exists
+        # Check source files hash
         if (-not (Test-Path $juliaCachePath)) {
             Write-TimestampedMessage "Initializing Julia cache with existing files..." -Color Yellow
             New-Item -ItemType Directory -Force -Path $juliaCachePath | Out-Null
@@ -104,13 +124,23 @@ if ($ForceJuliaRebuild) {
             }
             
             # Calculate and store hash of source files
-            $sourceFiles = Get-ChildItem -Path "promptveil/core/compression/TokenCompression.jl/src" -File -Recurse
-            $sourceHashes = $sourceFiles | ForEach-Object { Get-FileHash $_.FullName } | ForEach-Object { $_.Hash }
-            $combinedHash = [string]::Join("", $sourceHashes)
-            $combinedHash | Set-Content "$juliaCachePath/hash.txt"
+            $sourceHash = Get-SourceHash "promptveil/core/compression/TokenCompression.jl/src"
+            $sourceHash | Set-Content "$juliaCachePath/hash.txt"
             
             Write-TimestampedMessage "Cache initialized with all required files" -Color Green
             $needJuliaBuild = $false
+        } else {
+            # Compare source hash with cached hash
+            $currentHash = Get-SourceHash "promptveil/core/compression/TokenCompression.jl/src"
+            $cachedHash = Get-Content "$juliaCachePath/hash.txt" -ErrorAction SilentlyContinue
+            
+            if ($currentHash -eq $cachedHash) {
+                Write-TimestampedMessage "Julia build is up to date, skipping..." -Color Green
+                $needJuliaBuild = $false
+            } else {
+                Write-TimestampedMessage "Source files changed, rebuilding Julia module..." -Color Yellow
+                $needJuliaBuild = $true
+            }
         }
     }
 }
@@ -136,14 +166,12 @@ if ($needJuliaBuild) {
     
     # Cache the new build
     New-Item -ItemType Directory -Force -Path $juliaCachePath | Out-Null
+    $sourceHash = Get-SourceHash "promptveil/core/compression/TokenCompression.jl/src"
+    Set-Content "$juliaCachePath/hash.txt" -Value $sourceHash
     
-    # Calculate hash without Join-String
-    $sourceFiles = Get-ChildItem -Path "promptveil/core/compression/TokenCompression.jl/src" -File -Recurse
-    $sourceHashes = $sourceFiles | ForEach-Object { Get-FileHash $_.FullName } | ForEach-Object { $_.Hash }
-    $combinedHash = [string]::Concat($sourceHashes)
-    Set-Content "$juliaCachePath/hash.txt" -Value $combinedHash
-    
-    Copy-Item $juliaLibPath "$juliaCachePath/PromptVeilCore.dll" -Force
+    foreach ($file in $requiredFiles) {
+        Copy-Item $file "$juliaCachePath/$(Split-Path -Leaf $file)" -Force
+    }
 }
 
 # 2. Python Environment Setup Stage
@@ -155,28 +183,18 @@ New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 
 # Clean previous build but preserve venv and cargo cache
 Write-TimestampedMessage "Cleaning previous build..." -Color Yellow
-if (Test-Path $buildDir) {
-    # Save Cargo cache if it exists and we're not forcing a rebuild
-    $cargoCache = Join-Path $buildDir "cargo_target"
-    $cargoCacheBackup = "cargo_target_backup"
-    if ((Test-Path $cargoCache) -and (-not $ForceRustRebuild)) {
-        Write-TimestampedMessage "Preserving Cargo cache..." -Color Yellow
-        if (Test-Path $cargoCacheBackup) {
-            Remove-Item -Recurse -Force $cargoCacheBackup
-        }
-        Move-Item $cargoCache $cargoCacheBackup
-    } elseif ($ForceRustRebuild) {
-        Write-TimestampedMessage "Forcing Rust rebuild - clearing Cargo cache..." -Color Yellow
-    }
 
-    # Clean build directory but preserve specific folders
-    Get-ChildItem -Path $buildDir -Exclude @("venv", "cargo_target") | Remove-Item -Recurse -Force
-    
-    # Restore Cargo cache if not forcing rebuild
-    if ((Test-Path $cargoCacheBackup) -and (-not $ForceRustRebuild)) {
-        Write-TimestampedMessage "Restoring Cargo cache..." -Color Yellow
-        Move-Item $cargoCacheBackup $cargoCache
+# Save Cargo cache if it exists and we're not forcing a rebuild
+$cargoCache = Join-Path $buildDir "cargo_target"
+$cargoCacheBackup = "cargo_target_backup"
+if ((Test-Path $cargoCache) -and (-not $ForceRustRebuild)) {
+    Write-TimestampedMessage "Preserving Cargo cache..." -Color Yellow
+    if (Test-Path $cargoCacheBackup) {
+        Remove-Item -Recurse -Force $cargoCacheBackup
     }
+    Move-Item $cargoCache $cargoCacheBackup
+} elseif ($ForceRustRebuild) {
+    Write-TimestampedMessage "Forcing Rust rebuild - clearing Cargo cache..." -Color Yellow
 }
 
 # Create and setup Python virtual environment
@@ -217,31 +235,7 @@ if (-not (Test-Path $activateScript)) {
 # Use & to invoke the activation script
 & $activateScript
 
-# Verify venv is activated
-$currentPython = (Get-Command python).Source
-if (-not $currentPython.StartsWith($venvPath)) {
-    Write-TimestampedMessage "Error: Virtual environment not properly activated. Current Python: $currentPython" -Color Red
-    exit 1
-}
-
-Write-TimestampedMessage "Virtual environment activated successfully" -Color Green
-
-# Install pip if not present
-Write-TimestampedMessage "Checking pip installation..." -Color Yellow
-$pipResult = & $pythonExe -c "import pip" 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-TimestampedMessage "pip not found in virtual environment, installing..." -Color Yellow
-    $getTempFile = Join-Path $env:TEMP "get-pip.py"
-    Invoke-WebRequest "https://bootstrap.pypa.io/get-pip.py" -OutFile $getTempFile
-    & $pythonExe $getTempFile
-    Remove-Item $getTempFile
-    if ($LASTEXITCODE -ne 0) {
-        Write-TimestampedMessage "Error: Failed to install pip" -Color Red
-        exit 1
-    }
-}
-
-# Install base dependencies first
+# Install base dependencies
 Write-TimestampedMessage "`nInstalling base dependencies..." -Color Yellow
 & $pythonExe -m pip install --upgrade pip setuptools wheel
 if ($LASTEXITCODE -ne 0) {
@@ -276,9 +270,6 @@ foreach ($artifact in $juliaArtifacts) {
     if (Test-Path $sourcePath) {
         Write-TimestampedMessage "Copying Julia artifact: $artifact" -Color Yellow
         Copy-Item -Path $sourcePath -Destination $destPath -Force
-        if (-not $?) {
-            Write-TimestampedMessage "Warning: Failed to copy $artifact" -Color Yellow
-        }
     } else {
         Write-TimestampedMessage "Warning: Julia artifact not found: $artifact" -Color Yellow
     }
@@ -287,11 +278,13 @@ foreach ($artifact in $juliaArtifacts) {
 # Configure and build Rust components via CMake
 Write-TimestampedMessage "`nConfiguring CMake..." -Color Yellow
 Set-Location build
+
+# Configure CMake with optimizations
 cmake .. `
-    -DBUILD_TESTS=ON `
-    -DUSE_GPU=OFF `
-    -DBUILD_DOCS=OFF `
-    -DCMAKE_BUILD_TYPE=Debug `
+    -DCMAKE_BUILD_TYPE=Release `
+    -DCMAKE_BUILD_PARALLEL_LEVEL="$numJobs" `
+    -DCMAKE_C_FLAGS="/O2 /GL /MP$numJobs" `
+    -DCMAKE_CXX_FLAGS="/O2 /GL /MP$numJobs" `
     -DPYTHON_EXECUTABLE=$pythonExe
 
 if ($LASTEXITCODE -ne 0) {
@@ -301,7 +294,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-TimestampedMessage "`nBuilding Rust components..." -Color Yellow
-cmake --build . --config Debug
+cmake --build . --config Release --parallel $numJobs
 if ($LASTEXITCODE -ne 0) {
     Write-TimestampedMessage "Error: Rust build failed" -Color Red
     Set-Location $scriptDir
@@ -312,8 +305,6 @@ Set-Location $scriptDir
 
 # 4. Python Package Installation Stage
 Write-TimestampedMessage "`n=== Python Package Installation Stage ===" -Color Cyan
-
-Write-TimestampedMessage "`nInstalling Python package..." -Color Yellow
 
 # Install requirements first
 Write-TimestampedMessage "Installing requirements from: $scriptDir/promptveil/python/requirements.txt" -Color Yellow
