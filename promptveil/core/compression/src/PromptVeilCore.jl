@@ -151,8 +151,9 @@ function compress_batch(tokens::Matrix{UInt32}, config::CompressionConfig)::Comp
         # Compress each row using the trained model
         result = similar(input_matrix)
         for i in 1:size(input_matrix, 1)
-            row = view(input_matrix, i, :)
-            compressed_row = TokenCompression.optimize_tokens(row, model)
+            # Convert row to vector before compression
+            row_vec = Vector{UInt32}(input_matrix[i, :])
+            compressed_row = TokenCompression.optimize_tokens(row_vec, model)
             result[i, 1:length(compressed_row)] = compressed_row
             if length(compressed_row) < size(result, 2)
                 result[i, (length(compressed_row)+1):end] .= 0
@@ -164,10 +165,13 @@ function compress_batch(tokens::Matrix{UInt32}, config::CompressionConfig)::Comp
         TokenCompression.compress_batch(input_matrix)
     end
 
+    # Count only non-zero elements for compressed size
+    nonzero_count = count(!iszero, compressed)
+
     return CompressedResult(
         vec(compressed),  # Convert matrix to vector for consistent return type
         total_tokens,
-        count(!iszero, compressed)  # Count non-zero elements as compressed size
+        nonzero_count  # Use actual number of non-zero elements
     )
 end
 

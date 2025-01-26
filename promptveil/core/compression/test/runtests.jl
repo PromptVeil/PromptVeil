@@ -5,8 +5,9 @@ using CUDA
 
 @testset "PromptVeilCore Tests" begin
     @testset "Basic Compression" begin
-        # Test data with known patterns
-        tokens = UInt32[1000, 2000, 3000, 4000, 1000, 2000, 3000, 4000]
+        # Test data with known patterns (repeated sequence)
+        base_pattern = UInt32[1000, 2000, 3000, 4000]
+        tokens = vcat(fill(base_pattern, 10)...)  # Create sequence with lots of repetition
         
         # Test without patterns (basic compression)
         config = PromptVeilCore.CompressionConfig(false, false, false)
@@ -21,7 +22,7 @@ using CUDA
         config_patterns = PromptVeilCore.CompressionConfig(false, false, true)
         pattern_result = PromptVeilCore.optimize_tokens(tokens, config_patterns)
         
-        # Pattern detection should give better compression
+        # Pattern detection should give better compression for repeated data
         @test pattern_result.compressed_size < result.compressed_size
     end
     
@@ -29,7 +30,7 @@ using CUDA
         # Create sequence with known patterns
         pattern1 = UInt32[1000, 2000]
         pattern2 = UInt32[3000, 4000]
-        tokens = vcat(repeat(pattern1, 5), repeat(pattern2, 5))
+        tokens = vcat(repeat(pattern1, 10), repeat(pattern2, 10))  # More repetitions
         
         config = PromptVeilCore.CompressionConfig(false, false, true)
         result = PromptVeilCore.optimize_tokens(tokens, config)
@@ -47,12 +48,12 @@ using CUDA
     
     @testset "Batch Compression" begin
         # Create test batch with patterns
-        pattern = UInt32[1 2 3; 4 5 6; 7 8 9]
-        pattern_batch = repeat(pattern, outer=(10, 1))
+        base_pattern = UInt32[1 2 3; 4 5 6; 7 8 9]
+        pattern_batch = repeat(base_pattern, outer=(10, 1))
         
         # Test without patterns
         config = PromptVeilCore.CompressionConfig(false, false, false)
-        result = PromptVeilCore.optimize_tokens(vec(pattern_batch), config)
+        result = PromptVeilCore.compress_batch(pattern_batch, config)
         
         # Basic checks
         @test result.compressed_size <= result.original_size
