@@ -24,6 +24,19 @@ end
 const LAYOUTS_PATH = joinpath(@__DIR__, "..", "..", "security", "src", "layouts.rs")
 layouts = reflect([CompressionConfig, CompressedResult])
 
+# Rename fields to follow Rust naming conventions
+renamefields!(layouts, CompressionConfig, [
+    :use_gpu => "use_gpu",
+    :use_simd => "use_simd",
+    :use_patterns => "use_patterns"
+])
+
+renamefields!(layouts, CompressedResult, [
+    :data => "data",
+    :original_size => "original_size",
+    :compressed_size => "compressed_size"
+])
+
 # Write layouts to file
 open(LAYOUTS_PATH, "w") do f
     write(f, layouts)
@@ -140,23 +153,29 @@ function compress_batch(tokens::Matrix{UInt32}, config::CompressionConfig)::Comp
         end
     catch e
         @warn "GPU batch compression failed, falling back to CPU" exception=e
-        TokenCompression.compress_batch_cpu(input_matrix)
+        TokenCompression.compress_batch(input_matrix)
     end
 
     return CompressedResult(
-        vec(compressed),
+        vec(compressed),  # Convert matrix to vector for consistent return type
         total_tokens,
         length(compressed)
     )
 end
 
-function decompress_batch(compressed::Matrix{UInt32})::Matrix{UInt32}
-    if size(compressed, 1) == 0 || size(compressed, 2) == 0
-        throw(ArgumentError("Input matrix cannot be empty"))
+function decompress_batch(compressed::Vector{UInt32}, rows::Int, cols::Int)::Matrix{UInt32}
+    if isempty(compressed)
+        throw(ArgumentError("Input tokens cannot be empty"))
+    end
+    if rows <= 0 || cols <= 0
+        throw(ArgumentError("Invalid dimensions: rows and cols must be positive"))
+    end
+    if length(compressed) != rows * cols
+        throw(DimensionMismatch("Compressed data length does not match specified dimensions"))
     end
     
     try
-        TokenCompression.decompress_batch(compressed)
+        reshape(TokenCompression.decompress_tokens(compressed), rows, cols)
     catch e
         @warn "Batch decompression failed" exception=e
         rethrow(e)
