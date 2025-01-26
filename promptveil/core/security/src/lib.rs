@@ -4,6 +4,9 @@ use pyo3::exceptions::{PyIOError, PyRuntimeError};
 use std::convert::TryInto;
 use std::env;
 use std::sync::Once;
+use jlrs::ccall::CCall;
+use jlrs::data::managed::array::ArrayRef;
+use jlrs::data::layout::bool::Bool;
 
 mod compression;
 mod security;
@@ -76,6 +79,22 @@ impl Drop for JuliaCleanup {
 // Static instance to ensure cleanup
 static mut CLEANUP: Option<JuliaCleanup> = Some(JuliaCleanup);
 
+julia_module! {
+    become promptveil_init_fn;
+
+    fn optimize_tokens(
+        tokens: ArrayRef<'_, '_>,
+        config: CompressionConfig
+    ) -> CompressedResult<'_, '_>;
+
+    fn compress_batch(
+        tokens: ArrayRef<'_, '_>,
+        rows: i64,
+        cols: i64,
+        config: CompressionConfig
+    ) -> CompressedResult<'_, '_>;
+}
+
 #[pymodule]
 fn promptveil_core(_py: Python, m: &PyModule) -> PyResult<()> {
     // Initialize Julia on module load
@@ -83,8 +102,6 @@ fn promptveil_core(_py: Python, m: &PyModule) -> PyResult<()> {
     
     m.add_function(wrap_pyfunction!(compress_tokens, m)?)?;
     m.add_function(wrap_pyfunction!(decompress_tokens, m)?)?;
-    m.add_function(wrap_pyfunction!(compress_batch, m)?)?;
-    m.add_function(wrap_pyfunction!(decompress_batch, m)?)?;
     m.add_function(wrap_pyfunction!(encrypt, m)?)?;
     m.add_function(wrap_pyfunction!(decrypt, m)?)?;
     m.add_function(wrap_pyfunction!(generate_key, m)?)?;
@@ -155,69 +172,6 @@ fn decompress_tokens(data: &[u8]) -> PyResult<Vec<u8>> {
     .map_err(|e| PyRuntimeError::new_err(format!("Julia error: {}", e)))
 }
 
-#[pyfunction]
-fn compress_batch(data: &[u8], rows: usize, cols: usize, use_gpu: bool, use_simd: bool, use_patterns: bool) -> PyResult<Vec<u8>> {
-    let tokens = bytes_to_tokens(data)?;
-    let julia = get_julia().map_err(|e| PyRuntimeError::new_err(e))?;
-    
-    julia.local_scope::<_, 4>(|mut frame| -> JlrsResult<Vec<u8>> {
-        // Create config struct using generated layout
-        let config = Value::new(&mut frame, JuliaConfig {
-            use_gpu,
-            use_simd,
-            use_patterns,
-        });
-        
-        // Convert tokens to Julia matrix
-        let tokens_matrix = Value::new(&mut frame, (tokens, rows, cols));
-        
-        // Get compress_batch function
-        let module = Module::main(&frame).submodule(&mut frame, "PromptVeilCore")?;
-        let func = module.function(&mut frame, "compress_batch")?;
-        
-        // Call function
-        let result = unsafe {
-            func.call2(&mut frame, tokens_matrix, config)
-                .into_jlrs_result()?
-        };
-        
-        // Convert result back using generated layout
-        let compressed_result: JuliaResult = result.unbox()?;
-        Ok(compressed_result.data.iter()
-            .flat_map(|&token| token.to_le_bytes().to_vec())
-            .collect())
-    })
-    .map_err(|e| PyRuntimeError::new_err(format!("Julia error: {}", e)))
-}
-
-#[pyfunction]
-fn decompress_batch(data: &[u8], rows: usize, cols: usize) -> PyResult<Vec<u8>> {
-    let tokens = bytes_to_tokens(data)?;
-    let julia = get_julia().map_err(|e| PyRuntimeError::new_err(e))?;
-    
-    julia.local_scope::<_, 3>(|mut frame| -> JlrsResult<Vec<u8>> {
-        // Convert tokens to Julia matrix
-        let tokens_matrix = Value::new(&mut frame, (tokens, rows, cols));
-        
-        // Get decompress_batch function
-        let module = Module::main(&frame).submodule(&mut frame, "PromptVeilCore")?;
-        let func = module.function(&mut frame, "decompress_batch")?;
-        
-        // Call function
-        let result = unsafe {
-            func.call1(&mut frame, tokens_matrix)
-                .into_jlrs_result()?
-        };
-        
-        // Convert result back
-        let decompressed: Vec<u32> = result.unbox()?;
-        Ok(decompressed.iter()
-            .flat_map(|&token| token.to_le_bytes().to_vec())
-            .collect())
-    })
-    .map_err(|e| PyRuntimeError::new_err(format!("Julia error: {}", e)))
-}
-
 // Helper function to convert bytes to tokens
 fn bytes_to_tokens(data: &[u8]) -> PyResult<Vec<u32>> {
     if data.len() % 4 != 0 {
@@ -268,23 +222,9 @@ mod tests {
     }
 
     #[test]
-    fn test_batch_compression() {
-        let data = b"Test data for batch compression".repeat(100);
-        let rows = 100;
-        let cols = 8; // 32 bytes per row (8 tokens of 4 bytes)
-        let compressed = compress_batch(&data, rows, cols, true, true, true).unwrap();
-        let decompressed = decompress_batch(&compressed, rows, cols).unwrap();
-        assert_eq!(data.to_vec(), decompressed);
-    }
-
-    #[test]
     fn test_julia_errors() {
         // Test invalid data length
         let data = vec![1, 2, 3]; // Not multiple of 4
         assert!(compress_tokens(&data, false, false, false).is_err());
-        
-        // Test invalid matrix dimensions
-        let data = vec![0u8; 16];
-        assert!(compress_batch(&data, 0, 4, false, false, false).is_err());
     }
 } 
