@@ -74,7 +74,7 @@ function optimize_tokens(tokens::Vector{UInt32}, config::CompressionConfig)::Com
         tokens
     end
 
-    # Train model and compress based on configuration
+    # Train model if pattern detection is enabled
     model = if config.use_patterns
         try
             TokenCompression.train_bpe(input_tokens)
@@ -86,24 +86,13 @@ function optimize_tokens(tokens::Vector{UInt32}, config::CompressionConfig)::Com
         nothing
     end
 
-    # Apply compression with GPU fallback
-    compressed = try
-        if config.use_gpu && TokenCompression.has_gpu()
-            if model !== nothing
-                TokenCompression.optimize_tokens(input_tokens, model)
-            else
-                TokenCompression.optimize_tokens(input_tokens)
-            end
-        else
-            throw(ErrorException("GPU not available or not requested"))
-        end
-    catch e
-        @warn "GPU compression failed, falling back to CPU" exception=e
-        if model !== nothing
-            TokenCompression.optimize_tokens(input_tokens, model)
-        else
-            TokenCompression.optimize_tokens(input_tokens)
-        end
+    # Apply compression
+    compressed = if model !== nothing
+        # Use trained model for compression
+        TokenCompression.optimize_tokens(input_tokens, model)
+    else
+        # Basic compression without pattern detection
+        TokenCompression.optimize_tokens(input_tokens)
     end
 
     return CompressedResult(
@@ -144,22 +133,41 @@ function compress_batch(tokens::Matrix{UInt32}, config::CompressionConfig)::Comp
         tokens
     end
     
-    # Apply compression with GPU fallback
-    compressed = try
-        if config.use_gpu && TokenCompression.has_gpu()
-            TokenCompression.compress_batch(input_matrix)
-        else
-            throw(ErrorException("GPU not available or not requested"))
+    # Train model if pattern detection is enabled
+    model = if config.use_patterns
+        try
+            # Train on the flattened matrix to capture patterns across all sequences
+            TokenCompression.train_bpe(vec(input_matrix))
+        catch e
+            @warn "Failed to train BPE model for batch, falling back to basic compression" exception=e
+            nothing
         end
-    catch e
-        @warn "GPU batch compression failed, falling back to CPU" exception=e
+    else
+        nothing
+    end
+
+    # Apply compression
+    compressed = if model !== nothing
+        # Compress each row using the trained model
+        result = similar(input_matrix)
+        for i in 1:size(input_matrix, 1)
+            row = view(input_matrix, i, :)
+            compressed_row = TokenCompression.optimize_tokens(row, model)
+            result[i, 1:length(compressed_row)] = compressed_row
+            if length(compressed_row) < size(result, 2)
+                result[i, (length(compressed_row)+1):end] .= 0
+            end
+        end
+        result
+    else
+        # Basic batch compression
         TokenCompression.compress_batch(input_matrix)
     end
 
     return CompressedResult(
         vec(compressed),  # Convert matrix to vector for consistent return type
         total_tokens,
-        length(compressed)
+        count(!iszero, compressed)  # Count non-zero elements as compressed size
     )
 end
 
