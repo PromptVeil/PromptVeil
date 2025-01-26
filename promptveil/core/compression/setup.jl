@@ -20,8 +20,12 @@ Pkg.add([
     "PackageCompiler",
     "SIMD",
     "LinearAlgebra",
-    "Statistics"
+    "Statistics",
+    "Test"
 ])
+
+# Develop the local package
+Pkg.develop(PackageSpec(path=@__DIR__))
 
 # Force update to get latest versions
 Pkg.update()
@@ -36,4 +40,13 @@ catch e
 end
 
 # Precompile everything
-Pkg.precompile() 
+Pkg.precompile()
+
+# Test that everything is working
+@info "Testing if module can be loaded..."
+try
+    using PromptVeilCore
+    @info "PromptVeilCore loaded successfully"
+catch e
+    @error "Failed to load PromptVeilCore" exception=e
+end 
