@@ -3,6 +3,9 @@ using Pkg
 # Ensure we're in the right environment
 Pkg.activate(@__DIR__)
 
+# Ensure all dependencies are installed
+Pkg.instantiate()
+
 # Add registries if needed
 if !isfile(joinpath(DEPOT_PATH[1], "registries", "General", "Registry.toml"))
     Pkg.Registry.add("General")
