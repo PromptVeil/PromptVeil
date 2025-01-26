@@ -13,7 +13,7 @@ pyo3 = ["dep:pyo3"]
 
 [dependencies]
 pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
-jlrs = { version = "0.21.1", features = ["ccall", "derive", "julia-1-11"] }
+jlrs = { version = "0.21.1", features = ["ccall", "jlrs-derive", "julia-1-11"] }
 aes-gcm = "0.10.3"
 rand = "0.8.5"
 thiserror = "1.0"
