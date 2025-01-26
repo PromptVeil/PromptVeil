@@ -4,15 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "promptveil_core"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
 jlrs = { version = "0.21.1", features = ["ccall", "jlrs-derive", "julia-1-11"] }
-aes-gcm = "0.10.3"
-rand = "0.8.5"
+pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
 thiserror = "1.0"
+rand = "0.8.5"
+aes-gcm = "0.10.3"
 serde = { version = "1.0", features = ["derive"] }
 bincode = "1.3"
 

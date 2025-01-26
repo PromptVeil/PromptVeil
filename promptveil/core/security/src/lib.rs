@@ -34,102 +34,80 @@ fn get_julia() -> PyResult<&'static Runtime> {
 #[julia_module]
 mod promptveil_core {
     use super::*;
-
+    
     #[ccall]
-    fn optimize_tokens(tokens: TypedArray<'_, '_, u32>, config: Value<'_, '_>) 
-        -> JlrsResult<CompressedResult<'_, '_>> {
-        let module = Module::main(&frame).submodule(&mut frame, "PromptVeilCore")?;
-        let func = module.function(&mut frame, "optimize_tokens")?;
+    fn optimize_tokens<'a>(tokens: TypedArray<'a, 'a, u32>, config: Value<'a, 'a>) 
+        -> JlrsResult<CompressedResult<'a, 'a>> {
+        let module = Module::main(&frame).submodule("PromptVeilCore")?;
+        let func = module.function("optimize_tokens")?;
         
         unsafe {
-            func.call2(&mut frame, tokens, config)
-                .into_jlrs_result()?
-                .cast_into()
+            func.call2(tokens, config).into_jlrs_result()
         }
     }
 
     #[ccall]
-    fn compress_batch(tokens: TypedArray<'_, '_, u32>, rows: i64, cols: i64, config: Value<'_, '_>) 
-        -> JlrsResult<CompressedResult<'_, '_>> {
-        let module = Module::main(&frame).submodule(&mut frame, "PromptVeilCore")?;
-        let func = module.function(&mut frame, "compress_batch")?;
+    fn compress_batch<'a>(tokens: TypedArray<'a, 'a, u32>, rows: i64, cols: i64, config: Value<'a, 'a>)
+        -> JlrsResult<CompressedResult<'a, 'a>> {
+        let module = Module::main(&frame).submodule("PromptVeilCore")?;
+        let func = module.function("compress_batch")?;
         
         unsafe {
-            func.call4(&mut frame, tokens, rows, cols, config)
-                .into_jlrs_result()?
-                .cast_into()
+            func.call4(tokens, rows, cols, config).into_jlrs_result()
         }
     }
-}
-
-#[pyfunction]
-pub fn optimize_tokens(
-    tokens: Vec<u32>,
-    use_gpu: bool,
-    use_simd: bool,
-    use_patterns: bool,
-) -> PyResult<(Vec<u32>, usize)> {
-    let julia = get_julia()?;
-
-    julia.scope(|mut frame| {
-        let tokens_array = TypedArray::from_slice(&mut frame, &mut frame, &tokens)?;
-        
-        let config = CompressionConfig {
-            use_gpu: Bool::new(use_gpu),
-            use_simd: Bool::new(use_simd),
-            use_patterns: Bool::new(use_patterns),
-        };
-
-        let config_val = Value::new(&mut frame, config)?;
-        
-        let result = unsafe {
-            promptveil_core::optimize_tokens(&mut frame, tokens_array, config_val)?
-        };
-
-        Ok((result.data.to_vec(), result.compressed_size as usize))
-    }).map_err(|e| PyRuntimeError::new_err(format!("{:?}", e)))
-}
-
-#[pyfunction]
-pub fn compress_batch(
-    tokens: Vec<u32>,
-    rows: i64,
-    cols: i64,
-    use_gpu: bool,
-    use_simd: bool,
-    use_patterns: bool,
-) -> PyResult<(Vec<u32>, usize)> {
-    let julia = get_julia()?;
-
-    julia.scope(|mut frame| {
-        let tokens_array = TypedArray::from_slice(&mut frame, &mut frame, &tokens)?;
-        
-        let config = CompressionConfig {
-            use_gpu: Bool::new(use_gpu),
-            use_simd: Bool::new(use_simd),
-            use_patterns: Bool::new(use_patterns),
-        };
-
-        let config_val = Value::new(&mut frame, config)?;
-        
-        let result = unsafe {
-            promptveil_core::compress_batch(&mut frame, tokens_array, rows, cols, config_val)?
-        };
-
-        Ok((result.data.to_vec(), result.compressed_size as usize))
-    }).map_err(|e| PyRuntimeError::new_err(format!("{:?}", e)))
 }
 
 #[pymodule]
-fn promptveil_core(_py: Python, m: &PyModule) -> PyResult<()> {
+fn promptveil_core(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     init_julia()?;
     
-    m.add_function(wrap_pyfunction!(optimize_tokens, m)?)?;
-    m.add_function(wrap_pyfunction!(compress_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(optimize_tokens_py, m)?)?;
+    m.add_function(wrap_pyfunction!(compress_batch_py, m)?)?;
     m.add_function(wrap_pyfunction!(encrypt, m)?)?;
     m.add_function(wrap_pyfunction!(decrypt, m)?)?;
     m.add_function(wrap_pyfunction!(generate_key, m)?)?;
     Ok(())
+}
+
+#[pyfunction]
+fn optimize_tokens_py(py: Python<'_>, tokens: Vec<u32>, use_gpu: bool, use_simd: bool, use_patterns: bool) -> PyResult<(Vec<u32>, usize)> {
+    let config = CompressionConfig {
+        use_gpu,
+        use_simd,
+        use_patterns,
+    };
+
+    py.allow_threads(|| {
+        let ccall = CCall::new()?;
+        ccall.scope(|frame| {
+            let tokens_array = TypedArray::from_slice(&frame, &tokens, tokens.len())?;
+            let config_val = Value::new(&frame, config)?;
+            
+            let result = promptveil_core::optimize_tokens(&frame, tokens_array, config_val)?;
+            Ok((result.data.to_vec(), result.size))
+        })
+    })
+}
+
+#[pyfunction]
+fn compress_batch_py(py: Python<'_>, tokens: Vec<u32>, rows: i64, cols: i64, use_gpu: bool, use_simd: bool, use_patterns: bool) -> PyResult<(Vec<u32>, usize)> {
+    let config = CompressionConfig {
+        use_gpu,
+        use_simd,
+        use_patterns,
+    };
+
+    py.allow_threads(|| {
+        let ccall = CCall::new()?;
+        ccall.scope(|frame| {
+            let tokens_array = TypedArray::from_slice(&frame, &tokens, (rows * cols) as usize)?;
+            let config_val = Value::new(&frame, config)?;
+            
+            let result = promptveil_core::compress_batch(&frame, tokens_array, rows, cols, config_val)?;
+            Ok((result.data.to_vec(), result.size))
+        })
+    })
 }
 
 // Helper function to convert bytes to tokens
