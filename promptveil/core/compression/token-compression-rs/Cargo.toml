@@ -1,0 +1,37 @@
+[package]
+name = "token-compression-rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Paulo M. Vinhas (@pmatheusvinhas)"]
+description = "Rust bindings for TokenCompression.jl using Jlrs"
+license = "MIT"
+build = "build.rs"
+
+[dependencies]
+jlrs = { version = "0.21.1", features = ["async-rt", "tokio-rt", "julia-1-11"] }
+tokio = { version = "1.36.0", features = ["full"] }
+async-trait = "0.1.77"
+thiserror = "1.0.57"
+tracing = "0.1.40"
+futures = "0.3.30"
+
+[dev-dependencies]
+tokio = { version = "1.36.0", features = ["full", "test-util"] }
+futures = "0.3.30"
+criterion = "0.5.1"
+
+[build-dependencies]
+dirs = "5.0.1"
+
+[lib]
+name = "token_compression_rs"
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[package.metadata.julia]
+token_compression_path = "../TokenCompression.jl"
