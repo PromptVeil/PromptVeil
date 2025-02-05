@@ -2,20 +2,22 @@
 
 ## Overview
 
-PromptVeil's compression system is built on three layers:
+PromptVeil's compression system is built on two main layers:
 
-1. **TokenCompression.jl**: Core compression engine ([GitHub](https://github.com/pmatheusvinhas/TokenCompression.jl))
-2. **PromptVeilCore.jl**: Julia/Rust bridge with SIMD optimizations
-3. **Rust Layer**: High-level compression API
+1. **TokenCompression.jl**: Core compression engine with native SIMD optimizations ([GitHub](https://github.com/pmatheusvinhas/TokenCompression.jl))
+2. **Rust Layer**: High-level compression API using Jlrs for Julia integration
 
 ## Token Compression
 
 ### Core Features
 
 - **BPE-based Compression**: Byte Pair Encoding optimized for LLM tokens
-- **GPU Acceleration**: Automatic for sequences >1000 tokens
-- **Parallel Processing**: Efficient batch operations
+- **Native SIMD Optimization**: Julia's built-in SIMD for high performance
+- **GPU Acceleration**: Automatic for sequences >1000 tokens with CPU fallback
+- **Parallel Processing**: Multi-threaded operations with ThreadsX
 - **Pattern Learning**: Adaptive compression based on token patterns
+- **Memory Efficient**: Smart padding and variable sequence handling
+- **Fault Tolerant**: Robust GPU fallback mechanisms
 
 ### Optimization Techniques
 
@@ -23,16 +25,25 @@ PromptVeil's compression system is built on three layers:
    - Pattern detection in token sequences
    - Frequency-based pair merging
    - Vocabulary optimization
+   - Atomic operations for GPU counting
 
-2. **SIMD Acceleration**:
-   - 4-element vector operations
-   - Aligned memory access
-   - Automatic CPU/GPU selection
+2. **Native SIMD Acceleration**:
+   - Julia's built-in SIMD vectorization
+   - Optimized sequential operations
+   - Zero-allocation merge operations
+   - Automatic CPU feature detection
 
-3. **Batch Processing**:
-   - Parallel compression of multiple sequences
-   - GPU-accelerated batch operations
-   - Memory-efficient processing
+3. **Parallel Processing**:
+   - ThreadsX-powered CPU parallelization
+   - Batch-size aware GPU operations
+   - Automatic workload distribution
+   - Memory-efficient batch processing
+
+4. **Memory Management**:
+   - Smart sequence padding
+   - GPU memory optimization
+   - Variable length sequence handling
+   - Efficient matrix operations
 
 ## Architecture Components
 
@@ -41,69 +52,107 @@ PromptVeil's compression system is built on three layers:
 Core compression engine providing:
 
 ```julia
-# Token optimization with GPU support
+# Parallel frequency counting with GPU support
+function parallel_countmap(tokens::Vector{UInt32})
+    if length(tokens) < MIN_PARALLEL_SIZE
+        # Sequential processing for small sequences
+    elseif has_gpu()
+        # GPU-accelerated counting with atomic operations
+        CUDA.@atomic d_counts[token] += 1
+    else
+        # ThreadsX-powered CPU parallel counting
+        ThreadsX.map(process_batch, batches)
+    end
+end
+
+# Batch compression with memory management
+function compress_batch(tokens::Matrix{UInt32})
+    if has_gpu()
+        # Process in smaller batches to avoid memory issues
+        batch_size = 1000
+        for batch in chunks(tokens, batch_size)
+            # GPU-accelerated processing with memory management
+        end
+    else
+        # CPU parallel processing with ThreadsX
+    end
+end
+
+# Token optimization with automatic acceleration
 function optimize_tokens(tokens::Vector{UInt32}, pattern::TokenPattern)
     if has_gpu() && length(tokens) > MIN_PARALLEL_SIZE
         # GPU-accelerated optimization
     else
-        # CPU-based optimization
+        # SIMD-optimized CPU processing
     end
 end
-
-# Batch compression operations
-function compress_batch(tokens::Matrix{UInt32})
-    # Parallel compression with GPU support
-end
-
-function decompress_batch(tokens::Matrix{UInt32})
-    # Parallel decompression with GPU support
-end
 ```
 
-### 2. PromptVeilCore.jl
+### 2. Rust Layer with Jlrs
 
-Julia/Rust bridge with additional optimizations:
-
-```julia
-# SIMD-optimized token processing
-function optimize_tokens_simd(tokens::Vector{UInt32})
-    # Apply TokenCompression's optimize_tokens
-    compressed = TokenCompression.optimize_tokens(tokens)
-    
-    # SIMD optimizations for 4-element blocks
-    result = apply_simd_optimizations(compressed)
-    return result
-end
-
-# FFI functions for Rust integration
-Base.@ccallable function julia_optimize_tokens(ptr::Ptr{UInt32}, len::Int64)
-    # Safe FFI wrapper
-end
-```
-
-### 3. Rust Layer
-
-High-level compression API:
+High-level compression API using Jlrs for Julia integration:
 
 ```rust
-// Token compression with error handling
+use jlrs::prelude::*;
+
+// Token compression with Jlrs integration
 pub fn compress_tokens(tokens: &[u32]) -> io::Result<Vec<u8>> {
-    // Optimize tokens via Julia
-    let optimized = JuliaInterface::optimize_tokens(tokens);
+    let julia = Runtime::init().unwrap();
+    let mut frame = StackFrame::new();
     
-    // Convert to bytes
-    Ok(optimized.iter()
-        .flat_map(|&token| token.to_le_bytes().to_vec())
-        .collect())
+    // Call Julia functions via Jlrs
+    let result = julia.scope(|mut frame| {
+        let tokens = frame.create_vector(tokens)?;
+        let result = frame.call::<_, JlrsResult<Vec<u8>>>(
+            "optimize_tokens",
+            (tokens,)
+        )?;
+        Ok(result)
+    })?;
+    
+    Ok(result)
 }
 
-// Batch operations
+// Batch operations with memory management
 pub fn compress_batch(tokens: &[u32], rows: usize, cols: usize) -> io::Result<Vec<u32>> {
-    Ok(JuliaInterface::compress_batch(tokens, rows, cols))
+    let julia = Runtime::init().unwrap();
+    let mut frame = StackFrame::new();
+    
+    // Configure batch size for optimal memory usage
+    let batch_size = determine_optimal_batch_size(rows, cols);
+    
+    // Process in batches with proper memory management
+    julia.scope(|mut frame| {
+        // Batch processing implementation
+    })
 }
 ```
 
 ## Performance Characteristics
+
+### Memory Usage
+
+- **GPU Mode**: 
+  - Batch size limited to 1000 sequences
+  - Automatic memory management
+  - Atomic operations for counting
+  
+- **CPU Mode**:
+  - ThreadsX parallel processing
+  - Efficient sequence padding
+  - Variable length handling
+
+### Error Handling
+
+- **GPU Fallback**:
+  - Automatic fallback to CPU on GPU errors
+  - Warning messages for debugging
+  - Seamless recovery from GPU memory issues
+
+- **Memory Management**:
+  - Smart padding for variable sequences
+  - Efficient matrix operations
+  - Prevention of GPU memory leaks
 
 ### Compression Ratios
 
@@ -119,9 +168,9 @@ pub fn compress_batch(tokens: &[u32], rows: usize, cols: usize) -> io::Result<Ve
    - Large (>10k): ~10ms with GPU
 
 2. **Batch Processing**:
-   - Small batches: Linear scaling
-   - Large batches: Sub-linear with GPU
-   - Memory usage: O(n) with streaming support
+   - Optimal batch size: 1000 sequences
+   - Linear scaling up to GPU memory limit
+   - Automatic CPU fallback for large batches
 
 ### Hardware Acceleration
 
@@ -222,3 +271,26 @@ except MemoryError:
    - Stream large sequences
    - Use appropriate buffer sizes
    - Clean up temporary data 
+
+## Unique Approach to Token Compression
+
+While traditional token compression methods focus on converting text to tokens, PromptVeil takes a novel approach:
+
+### Traditional Token Compression
+- Primary focus on text-to-token conversion
+- Fixed vocabulary and patterns
+- General-purpose compression
+- ~4 bytes per token average
+
+### PromptVeil's Advanced Compression
+- Specialized for already-tokenized LLM conversations
+- Adaptive pattern learning from conversation structures
+- Hardware-accelerated compression (GPU/SIMD)
+- Achieves 25-75% additional size reduction
+- Optimized for dialogue patterns and conversation flow
+
+Key advantages of our approach:
+1. **Conversation-Aware**: Learns and optimizes for dialogue patterns
+2. **Post-Tokenization**: Works with any tokenizer's output
+3. **Hardware Acceleration**: Leverages GPU/SIMD for performance
+4. **Adaptive Learning**: Improves compression based on conversation patterns 

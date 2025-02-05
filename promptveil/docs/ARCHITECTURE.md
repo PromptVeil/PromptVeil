@@ -1,17 +1,195 @@
 # PromptVeil Architecture
 
+## Overview
+
+PromptVeil follows a modular architecture with clear separation of concerns:
+
+```
+[Python High-Level API] --> [Rust Core Modules] --> [Hardware Acceleration]
+```
+
 ## Core Components
 
-PromptVeil is built with a layered architecture focusing on security, efficiency, and usability:
+### 1. Rust Core (promptveil_core)
 
-1. **Core Layer** - Julia and Rust components for performance-critical operations
-   - [TokenCompression.jl](https://github.com/yourusername/TokenCompression.jl) for optimized token compression
-   - Rust security layer for encryption and key management (see [SECURITY.md](SECURITY.md))
+Central integration point for all core functionality:
 
-2. **Python Layer** - High-level interface and business logic
-   - Conversation management
-   - Search and indexing (see [INDEXING.md](INDEXING.md))
-   - File format handling
+```rust
+pub struct PromptVeilCore {
+    security: SecurityManager,
+    format: PveilManager,
+    index: IndexManager,
+    compression: CompressionManager,
+}
+```
+
+#### Security Manager
+- Hardware-accelerated encryption (AES-GCM)
+- Key management and rotation
+- Memory protection
+- See [SECURITY.md](SECURITY.md) for details
+
+#### Format Manager
+- .pveil binary format handling
+- Partition management
+- Global and local indices
+- See [FORMAT.md](FORMAT.md) for details
+
+#### Index Manager
+- Vector similarity search (HNSW)
+- Text search (TF-IDF)
+- Real-time indexing
+- See [INDEXING.md](INDEXING.md) for details
+
+#### Compression Manager
+- Integration with TokenCompression.jl
+- GPU/SIMD acceleration
+- Batch processing
+- See [COMPRESSION.md](COMPRESSION.md) for details
+
+### 2. Distributed Processing
+
+Optional component for scaling:
+
+```rust
+pub struct DistributedManager {
+    workers: Vec<Worker>,
+    config: DistributedConfig,
+}
+
+pub struct Worker {
+    compression: CompressionManager,
+    security: SecurityManager,
+    index: IndexManager,
+}
+```
+
+Features:
+- Automatic partitioning
+- Parallel processing
+- Result merging
+- Load balancing
+
+### 3. Python Integration
+
+Single high-level API for end users:
+
+```python
+class PromptVeil:
+    def __init__(self, distributed: bool = False, workers: int = 1):
+        """Initialize PromptVeil with optional distributed processing."""
+        
+    def save_conversation(self, messages: List[Dict[str, str]]):
+        """Save a conversation with automatic processing."""
+        
+    def search(self, query: str) -> List[SearchResult]:
+        """Search conversations using hybrid search."""
+        
+    def find_similar(self, text: str) -> List[SearchResult]:
+        """Find similar conversations using vector search."""
+```
+
+## Data Flow
+
+1. **Input Processing**
+   ```
+   Raw Conversation
+   → Tokenization
+   → Compression (TokenCompression.jl)
+   → Encryption (AES-GCM)
+   → .pveil Format
+   → Index Updates
+   → Storage
+   ```
+
+2. **Search Processing**
+   ```
+   Search Query
+   → Vector Embedding
+   → Parallel Search
+     → Vector Similarity (HNSW)
+     → Text Search (TF-IDF)
+   → Result Merging
+   → Response
+   ```
+
+## Hardware Acceleration
+
+1. **Compression**
+   - GPU acceleration via CUDA
+   - SIMD optimization
+   - Batch processing
+
+2. **Encryption**
+   - AES-NI instructions
+   - Hardware random number generation
+   - Secure key storage
+
+3. **Search**
+   - GPU-accelerated vector search
+   - Parallel text search
+   - Distributed processing
+
+## Implementation Details
+
+### Core Module Integration
+
+```rust
+// Core integration point
+impl PromptVeilCore {
+    pub fn process_conversation(&self, conv: Conversation) -> Result<()> {
+        // 1. Compress
+        let compressed = self.compression.compress_batch(&conv.tokens)?;
+        
+        // 2. Encrypt
+        let encrypted = self.security.encrypt(&compressed)?;
+        
+        // 3. Format
+        let pveil_data = self.format.create_partition(encrypted)?;
+        
+        // 4. Index
+        self.index.update_indices(&pveil_data)?;
+        
+        Ok(())
+    }
+}
+```
+
+### Distributed Processing
+
+```rust
+impl DistributedManager {
+    pub fn process_batch(&self, conversations: Vec<Conversation>) -> Result<()> {
+        // 1. Partition data
+        let partitions = self.create_partitions(conversations);
+        
+        // 2. Distribute to workers
+        let results = self.workers.par_iter()
+            .map(|worker| worker.process_partition(partition))
+            .collect();
+            
+        // 3. Merge results
+        self.merge_results(results)
+    }
+}
+```
+
+## Future Considerations
+
+1. **Scaling**
+   - Distributed index sharding
+   - Streaming processing
+   - Cloud integration
+
+2. **Performance**
+   - Custom GPU kernels
+   - Optimized memory management
+   - Advanced caching
+
+3. **Features**
+   - Real-time processing
+   - Custom backends
+   - Plugin system
 
 ## Security
 

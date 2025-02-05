@@ -1,50 +1,60 @@
-[tool.poetry]
+[build-system]
+requires = ["maturin>=1.4,<2.0"]
+build-backend = "maturin"
+
+[project]
 name = "promptveil"
 version = "0.1.0"
-description = "Privacy-focused LLM interaction library"
-authors = ["Your Name <your.email@example.com>"]
+description = "A framework for secure, efficient storage and retrieval of LLM conversations"
+authors = [
+    {name = "PromptVeil Team", email = "team@promptveil.ai"}
+]
+requires-python = ">=3.8"
 readme = "README.md"
-packages = [{include = "promptveil"}]
+license = {file = "LICENSE"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 
-[tool.poetry.dependencies]
-python = "^3.7"
-promptveil-core = {path = "../core/security", develop = true}
+dependencies = [
+    "numpy>=1.20.0",
+    "pydantic>=2.0.0",
+    "typing-extensions>=4.0.0",
+    "aiofiles>=23.0.0",
+    "asyncio>=3.4.3",
+]
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^7.4.0"
-black = "^23.7.0"
-isort = "^5.12.0"
-mypy = "^1.4.1"
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+]
+dev = [
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.maturin]
+python-source = "python"
+features = ["pyo3/extension-module"]
+module-name = "promptveil._core"
+bindings = "pyo3"
 
 [tool.black]
 line-length = 88
-include = '\.pyi?$'
-exclude = '''
-/(
-    \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | _build
-  | buck-out
-  | build
-  | dist
-)/
-'''
+target-version = ["py38"]
 
 [tool.isort]
 profile = "black"
-multi_line_output = 3
-
-[tool.mypy]
-python_version = "3.7"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true 
+multi_line_output = 3 

@@ -31,13 +31,18 @@ ENV/
 deps/deps.jl
 Manifest.toml
 LocalPreferences.toml
+# /promptveil/core/compression/TokenCompression.jl/
 
 # Rust
 /target/
-promptveil/core/security/target/
-promptveil/core/format/target/
+promptveil/core/compression/token-compression-rs/target/
+promptveil/core/security/security-rs/target/
+promptveil/core/promptveil-core/target/
+promptveil/core/format/format-rs/target/
+promptveil/core/index/index-rs/target/
 **/*.rs.bk
 Cargo.lock
+
 
 # Build artifacts
 *.dll
@@ -52,6 +57,7 @@ Cargo.lock
 .idea/
 *.swp
 *.swo
+*.code-workspace
 
 # OS
 .DS_Store
@@ -60,4 +66,4 @@ Thumbs.db
 # Project specific
 build/
 *.pveil
-*.bak 
+*.bak

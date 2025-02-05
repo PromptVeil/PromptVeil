@@ -6,3 +6,6 @@ pytest>=6.0
 black>=21.0
 mypy>=0.900
 isort>=5.0 
+torch 
+torchvision 
+torchaudio

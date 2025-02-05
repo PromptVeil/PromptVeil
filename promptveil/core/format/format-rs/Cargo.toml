@@ -1,0 +1,40 @@
+[package]
+name = "format-rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Paulo M. Vinhas (@pmatheusvinhas)"]
+description = "Format layer for PromptVeil providing efficient message serialization and versioning"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1.36.0", features = ["full"] }
+async-trait = "0.1.77"
+thiserror = "1.0.57"
+tracing = "0.1.40"
+futures = "0.3.30"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+rmp-serde = "1.1"
+
+[dev-dependencies]
+tokio = { version = "1.36.0", features = ["full", "test-util"] }
+futures = "0.3.30"
+criterion = "0.5.1"
+tokio-test = "0.4"
+rand = "0.8"
+
+[lib]
+name = "format_rs"
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+debug = false
+strip = true
+panic = "abort"
+codegen-units = 1
+
+[[bench]]
+name = "format_benchmark"
+harness = false 

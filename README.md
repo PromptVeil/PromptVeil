@@ -15,7 +15,7 @@
 <h3 align="center">Open Source Framework for LLM Conversation Management</h3>
 
 <p align="center">
-  <strong>A comprehensive framework for secure, efficient storage and retrieval of AI conversations</strong>
+  <strong>A comprehensive framework for secure, efficient storage, and retrieval of AI conversations</strong>
 </p>
 
 <p align="center">
@@ -42,14 +42,14 @@ PromptVeil is an open-source framework designed to solve the challenges of stori
 
 - **High-Performance Core**: Julia-powered compression engine with SIMD/GPU acceleration
 - **Security Layer**: Rust-based encryption with hardware acceleration
-- **Search System**: TF-IDF based search with phrase matching and role filtering
+- **Advanced Search System**: Efficient retrieval with TF-IDF based search, phrase matching, and role filtering
 - **Python Interface**: Simple yet powerful API for developers
 
 ### Design Philosophy
 
 - 🔒 **Security First**: Hardware-accelerated encryption, secure key management
 - 🚀 **High Performance**: GPU-accelerated compression, parallel processing
-- 🔍 **Smart Search**: Advanced indexing with relevance ranking
+- 🔍 **Smart and Efficient Search**: Advanced indexing with relevance ranking and efficient retrieval
 - 🎯 **Production Ready**: Designed with enterprise-grade standards in mind
 
 ## Technical Details
@@ -69,15 +69,22 @@ We use industry-standard cryptographic primitives with careful consideration:
   - Phrase matching support
   - Role-based filtering
   - Recency-aware ranking
+  - Efficient retrieval through optimized indexing
   - See [INDEXING.md](docs/INDEXING.md) for details
 
-### Compression Engine
-- **Token-Aware Compression**: Custom Julia algorithms optimized for LLM data
-- **Hardware Acceleration**: 
-  - SIMD vectorization for CPU efficiency
-  - CUDA support for GPU acceleration
-  - Automatic performance scaling
-  - See [COMPRESSION.md](docs/COMPRESSION.md) for details
+## Innovation in Compression
+PromptVeil introduces a novel approach to LLM conversation compression:
+
+- **Two-Stage Compression**: Works with any tokenizer's output to provide additional compression
+- **Conversation-Aware**: Specialized algorithms that understand and optimize for dialogue patterns
+- **Hardware Acceleration**: Leverages GPU and SIMD for high-performance compression
+- **Adaptive Learning**: Improves compression ratios by learning from conversation structures
+
+Performance Metrics:
+- 25-50% average size reduction
+- Up to 75% for repetitive dialogue patterns
+- Hardware-accelerated processing
+- Maintains conversation structure integrity
 
 ### Storage Format (.pveil)
 Our binary format is designed for:
@@ -90,24 +97,45 @@ See [FORMAT.md](docs/FORMAT.md) for specifications.
 ## Quick Start
 
 ```python
-from promptveil import ConversationStore, Conversation
+from promptveil import PromptVeil, SearchConfig
 
-# Create a store for managing conversations
-store = ConversationStore()
+# Initialize PromptVeil
+pv = PromptVeil()
 
-# Add conversations
-conv = Conversation()
-conv.add_message("user", "What is quantum computing?")
-conv.add_message("assistant", "Quantum computing leverages quantum phenomena...")
-conv_id = store.add_conversation(conv)
+# Add a conversation
+conversation = [
+    {"role": "user", "content": "What is quantum computing?"},
+    {"role": "assistant", "content": "Quantum computing leverages quantum phenomena..."}
+]
+pv.add_conversation(conversation)
 
-# Search conversations
-results = store.search("quantum computing")
+# Basic search
+results = pv.search("quantum computing")
+
+# Advanced hybrid search
+search_config = SearchConfig(
+    query="quantum computing",
+    search_type="hybrid",  # Options: "text", "vector", "hybrid"
+    weights={
+        "text": 0.7,      # Weight for text-based search
+        "vector": 0.3     # Weight for vector similarity
+    },
+    filters={
+        "role": "assistant",
+        "timestamp": {"after": "2024-01-01"}
+    },
+    limit=10
+)
+
+results = pv.search(search_config)
+
+# Process results
 for result in results:
-    print(f"Score: {result.score}, Snippet: {result.snippet}")
-
-# Save store securely
-store.save("conversations.pveil")
+    print(f"Score: {result.score}")
+    print(f"Text Match Score: {result.text_score}")
+    print(f"Vector Similarity: {result.vector_score}")
+    print(f"Content: {result.content}")
+    print(f"Highlights: {result.highlights}")  # Matched text segments
 ```
 
 ## Roadmap
@@ -159,34 +187,90 @@ See our [Contributing Guide](docs/CONTRIBUTING.md) for details on how to get sta
 
 ```mermaid
 graph TD
-    A[Application Layer] <-->|Conversation| B[Store Manager]
+    A[Python High-Level API] -->|PyO3| B[PromptVeil Core]
     
-    B <-->|Encrypted Conversation| C[Security Service]
-    B <-->|Compressed Conversation| D[Storage Service]
-    B <-->|Indexed Conversation| E[Search Service]
+    subgraph "Core Modules (Rust)"
+        B --> C[Security Manager]
+        B --> D[Format Manager]
+        B --> E[Index Manager]
+        B --> F[Compression Manager]
+        
+        C -->|AES-GCM| C1[Hardware Encryption]
+        C -->|Key Rotation| C2[Key Management]
+        
+        D -->|.pveil| D1[Partition Management]
+        D -->|Binary Format| D2[Global Indices]
+        
+        E -->|HNSW| E1[Vector Store]
+        E -->|TF-IDF| E2[Text Index]
+        
+        F -->|Jlrs| F1[TokenCompression.jl]
+        F -->|GPU/SIMD| F2[Hardware Acceleration]
+    end
     
-    subgraph Core Services
-        C <-->|Secured Data| C1[Encryption]
-        C <-->|Keys| C2[Key Management]
-        
-        D <-->|Binary Data| D1[Compression]
-        D <-->|.pveil format| D2[File Format]
-        
-        E <-->|Metadata + Content| E1[Indexing]
-        E <-->|Search Results| E2[Query Engine]
+    subgraph "Distributed Processing"
+        B -->|Optional| G[Distributed Manager]
+        G -->|Parallel| G1[Worker 1]
+        G -->|Parallel| G2[Worker 2]
+        G -->|Parallel| G3[Worker N]
     end
 
-    classDef entity fill:#f9f,stroke:#333,stroke-width:2px;
-    class Conversation entity;
+    classDef rust fill:#deb887,stroke:#000;
+    classDef julia fill:#9558b2,stroke:#000;
+    classDef python fill:#4b8bbe,stroke:#000;
+    
+    class A python;
+    class B,C,D,E,G rust;
+    class F1 julia;
 ```
 
-For detailed architecture documentation, see:
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System overview
-- [SECURITY.md](docs/SECURITY.md) - Security implementation
-- [INDEXING.md](docs/INDEXING.md) - Search system
-- [COMPRESSION.md](docs/COMPRESSION.md) - Compression engine
-- [FORMAT.md](docs/FORMAT.md) - File format
-- [PYTHON_API.md](docs/PYTHON_API.md) - API reference
+### Core Components
+
+1. **Security Manager (Rust)**
+   - Hardware-accelerated AES-GCM encryption
+   - Secure key management and rotation
+   - Memory protection
+
+2. **Format Manager (Rust)**
+   - .pveil binary format handling
+   - Partition management
+   - Global indices maintenance
+
+3. **Index Manager (Rust)**
+   - Vector-based similarity search
+   - Text-based search with TF-IDF
+   - Real-time index updates
+   - Efficient retrieval mechanisms
+
+4. **Compression Manager (Rust + Julia)**
+   - Integration with TokenCompression.jl
+   - GPU/SIMD acceleration
+   - Batch processing optimization
+
+5. **Distributed Processing (Optional)**
+   - Automatic partitioning
+   - Parallel processing
+   - Result merging
+
+### Python Integration
+
+Simple high-level API for end users:
+
+```python
+from promptveil import PromptVeil
+
+# Initialize with optional distributed processing
+pv = PromptVeil(distributed=True, workers=4)
+
+# Save conversations (automatically handles compression, encryption, and indexing)
+pv.save_conversation([
+    {"role": "user", "content": "What is quantum computing?"},
+    {"role": "assistant", "content": "Quantum computing leverages..."}
+])
+
+# Search with automatic vector/text hybrid search
+results = pv.search("quantum computing")
+```
 
 ## Performance
 

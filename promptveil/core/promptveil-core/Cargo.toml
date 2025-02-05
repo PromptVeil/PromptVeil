@@ -1,0 +1,51 @@
+[package]
+name = "promptveil-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "promptveil_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Core modules
+index-rs = { path = "../index/index-rs" }
+security-rs = { path = "../security/security-rs" }
+format-rs = { path = "../format/format-rs" }
+
+# Python bindings
+pyo3 = { version = "0.20.0", features = ["extension-module", "abi3-py38"] }
+pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
+
+# Async runtime
+tokio = { version = "1.35.1", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0.195", features = ["derive"] }
+serde_json = "1.0.111"
+
+# Error handling
+thiserror = "1.0.56"
+
+# Utilities
+log = "0.4"
+env_logger = "0.11.1"
+async-trait = "0.1.77"
+futures = "0.3.30"
+
+# Embeddings and ML
+rust-bert = "0.23.0"
+tch = "0.17.0"  # PyTorch bindings
+moka = { version = "0.12.1", features = ["future"] }
+rayon = "1.8.0" # Parallel processing
+
+# Additional dependencies
+chrono = "0.4.31"
+
+[features]
+extension-module = ["pyo3/extension-module"]
+default = ["extension-module"]
+
+[dev-dependencies]
+tokio-test = "0.4.3"
+tempfile = "3.9.0" 

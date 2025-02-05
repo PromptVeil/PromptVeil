@@ -1,8 +1,229 @@
 # Python API Reference
 
-## Overview
+## High-Level API
 
-The PromptVeil Python API provides a high-level interface for managing LLM conversations. This document describes both currently implemented features and planned functionality.
+The main interface for end users is the `PromptVeil` class:
+
+```python
+from promptveil import PromptVeil
+
+# Initialize
+pv = PromptVeil(
+    distributed=False,  # Enable distributed processing
+    workers=1,         # Number of worker processes
+    gpu_enabled=True,  # Enable GPU acceleration
+    batch_size=1000    # Batch size for processing
+)
+```
+
+### Basic Operations
+
+#### Saving Conversations
+
+```python
+# Save a single conversation
+pv.save_conversation([
+    {"role": "user", "content": "What is quantum computing?"},
+    {"role": "assistant", "content": "Quantum computing leverages..."}
+])
+
+# Save multiple conversations (batch processing)
+pv.save_conversations([
+    [
+        {"role": "user", "content": "Question 1"},
+        {"role": "assistant", "content": "Answer 1"}
+    ],
+    [
+        {"role": "user", "content": "Question 2"},
+        {"role": "assistant", "content": "Answer 2"}
+    ]
+])
+```
+
+#### Searching
+
+```python
+# Text-based search
+results = pv.search("quantum computing")
+for result in results:
+    print(f"Score: {result.score}")
+    print(f"Conversation: {result.messages}")
+
+# Semantic search
+similar = pv.find_similar("How do quantum computers work?")
+for match in similar:
+    print(f"Similarity: {match.similarity}")
+    print(f"Conversation: {match.messages}")
+```
+
+### Advanced Configuration
+
+```python
+from promptveil import Config
+
+config = Config(
+    # Storage
+    storage_path="conversations.pveil",
+    
+    # Security
+    encryption_enabled=True,
+    key_rotation_days=30,
+    
+    # Compression
+    compression_level="high",
+    gpu_batch_size=1000,
+    
+    # Distributed Processing
+    distributed=True,
+    workers=4,
+    worker_memory_limit="4GB"
+)
+
+pv = PromptVeil(config=config)
+```
+
+### Error Handling
+
+```python
+from promptveil import PromptVeilError, GPUError
+
+try:
+    pv.save_conversation(messages)
+except GPUError:
+    # Fallback to CPU processing
+    pv.config.gpu_enabled = False
+    pv.save_conversation(messages)
+except PromptVeilError as e:
+    print(f"Error: {e}")
+```
+
+### Async Support
+
+```python
+async def process_conversations():
+    async with PromptVeil() as pv:
+        # Async operations
+        await pv.save_conversation(messages)
+        results = await pv.search("query")
+```
+
+## Data Types
+
+### Conversation
+
+```python
+class Conversation:
+    messages: List[Message]
+    metadata: Optional[Dict]
+    timestamp: datetime
+```
+
+### Message
+
+```python
+class Message:
+    role: str      # "user" or "assistant"
+    content: str   # Message content
+    timestamp: datetime
+```
+
+### SearchResult
+
+```python
+class SearchResult:
+    conversation: Conversation
+    score: float           # Relevance score
+    snippet: str          # Matching context
+    highlights: List[str] # Highlighted terms
+```
+
+### SimilarityMatch
+
+```python
+class SimilarityMatch:
+    conversation: Conversation
+    similarity: float     # Similarity score (0-1)
+    vector_distance: float
+```
+
+## Performance Considerations
+
+### Batch Processing
+
+For better performance with large datasets:
+
+```python
+# Process conversations in batches
+with pv.batch_mode():
+    for batch in conversation_batches:
+        pv.save_conversations(batch)
+```
+
+### Memory Management
+
+```python
+# Control memory usage
+with pv.memory_limit("8GB"):
+    pv.process_large_dataset(data)
+```
+
+### GPU Optimization
+
+```python
+# Configure GPU usage
+pv.config.gpu_settings.update(
+    min_batch_size=1000,
+    max_memory="4GB",
+    precision="float16"
+)
+```
+
+## Examples
+
+### Basic Usage
+
+```python
+from promptveil import PromptVeil
+
+# Initialize
+pv = PromptVeil()
+
+# Save conversation
+pv.save_conversation([
+    {"role": "user", "content": "Hello!"},
+    {"role": "assistant", "content": "Hi there!"}
+])
+
+# Search
+results = pv.search("hello")
+```
+
+### Distributed Processing
+
+```python
+# Initialize with distributed processing
+pv = PromptVeil(distributed=True, workers=4)
+
+# Process large dataset
+conversations = load_large_dataset()
+pv.save_conversations(conversations)
+```
+
+### Custom Configuration
+
+```python
+from promptveil import PromptVeil, Config
+
+config = Config(
+    storage_path="custom.pveil",
+    encryption_enabled=True,
+    compression_level="high",
+    distributed=True,
+    workers=4
+)
+
+pv = PromptVeil(config=config)
+```
 
 ## Feature Status
 
